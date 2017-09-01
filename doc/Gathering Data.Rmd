@@ -1,0 +1,71 @@
+---
+title: "Gathering Data"
+output: html_notebook
+---
+
+We are going to regress the return of holding 1M FX forwards against a fairly standard set of macroeconomic and technical indicators. In the past, I've done all this using Bloomberg data, but that carries license restrictions. It's my hope I can use freely available data via Quandl's interface.
+
+The factors are as follows:
+
+| Factor           | Description                                 |
+|------------------|---------------------------------------------|
+| Equity           | The 40-day change in the local equity index |
+| Spot_40D         | The 40-day change in spot rates             |
+| SwapRate_2Y      | The 2Y Swap Rate                            |
+| TwoYear_40D      | The 40-day change in 2Y Swap rate           |
+| YieldCurve       | The spread between 10Y and 2Y Swaps         |
+| FX_Return (endo) | The spot rate change plus the carry return  |
+
+All of these factors should be available on a daily basis, but I wouldn't expect their impact to be felt quite so quickly. In the past, I've fit this model on monthly data with at least 15 years' history. This time, I'm adding CZK and TRY to my usual set of pairs, and I would expect they lack some of the data I'd need, so I may try weekly periodicity on a shorter time period. We'll see once we get all the data.
+
+Let's start with the major traded currencies, plus a few popular targets for the carry trade. We will use:
+AUD, CAD, CHF, CZK, EUR, GBP, JPY, NOK, NZD, SEK, TRY, USD
+
+This will provide a few exogenous shocks, including the Swiss Franc peg, the Brexit panic, the Turkish coup, the taper tantrum, various iterations of the Euro credit crisis, and, if I can get data going far enough back, the 2008 crash. This model is obviously not going to foresee any of these, although it will produce its own covariance estimates for the currencies, which can be used at the portfolio optimization stage if one were to trade on these signals.
+
+Step one is to explore what data is available, and either make changes to the scope of our assets and our factors, or to see what imputation we can make to handle missing data. It's encouraged to handle missing data directly in the generative model, but I think we'll have enough parameters just on the Gaussian process.
+
+# Load Libraries
+```{r libs, message=FALSE, warning=FALSE}
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+library(tidyverse)
+library(Quandl)
+library(lubridate)
+library(ggthemes)
+library(GGally) #for scatter plot matrixes
+```
+
+# Raw Data
+
+For all currencies, we need 1M funding rates, 2Y and 10Y swaps, equity indexes, and spot rates, all on a daily basis.
+
+Let's start with the hardest stuff and move up. There's no point gathering a bunch of information for Turkey, for example, if it turns out I can't find a reliable 10Y swap rate.
+
+## Swap Rates
+
+It's quickly become clear that I can't get swap data for free. So, unfortunately, this demo just became difficult for the reader to duplicate, because I don't have the right to distribute the rate data I'm going to use. I will keep looking for substitutes, but I don't want to get bogged down in data as my primary purpose is to demonstrate the model. 
+```{r get_swaps, fig.height=10, fig.width=16.1}
+library(readxl)
+rate_pages <- c("10Y Swaps", "2Y Swaps", "Forward Points", "1M Swaps", "Implied 1M Fwd")
+RATE_PATH <- "../data/proprietary/rates.xlsx"
+
+rates <- map_dfr(rate_pages, read_xlsx,
+                 path=RATE_PATH,
+                 col_types=c("date",rep("numeric",12)), .id="type")  %>%
+         mutate(type=factor(rate_pages[as.numeric(type)])) %>%
+         gather(asset, value, -type, -Date) %>%
+         na.omit()
+rates %>% ggplot(aes(x=Date,y=value)) + facet_grid(type~asset, scales="free_y") + 
+  geom_line() + ggtitle("Rate Data")
+```
+
+Turkey had a bout of hyperinflation in the early 2000s. I'm not sure what's going on with those 1M Norway rates, but it's not right. If we start our data set in 2007, we'll eliminate these issues and still get to keep the credit crisis.
+
+```{r, fig.height=10, fig.width=16.1}
+rates %>% filter(Date >= as.Date("2007-01-01")) %>%
+  ggplot(aes(x=Date, y=value)) + facet_grid(type~asset, scales="free_y") + geom_line() + ggtitle("Rate data")
+```
+
+EUR 1M Swap rate is obviously wrong, too; it's been the same value for nearly 10 years. The implied rate, which is backed out from the forward points, looks more realistic, but it can be messy.
+
+We can backfill Australia and Norway with the 1M swap data. More worrisome is the choppiness in the forward points (and hence the implied rate) for CHF, CZK, and SEK. I've never traded CZK professionally, but I don't recall having issues with CHF or SEK in those time periods. CHF had a peg for a while. Smoothing misses turning points, and probably doesn't reflect what we would do in production, on a day where the rates quoted were out of whack. If we could help it, we probably just wouldn't trade CZK that day.
