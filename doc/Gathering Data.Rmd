@@ -18,6 +18,8 @@ The factors are as follows:
 
 All of these factors should be available on a daily basis, but I wouldn't expect their impact to be felt quite so quickly. In the past, I've fit this model on monthly data with at least 15 years' history. This time, I'm adding CZK and TRY to my usual set of pairs, and I would expect they lack some of the data I'd need, so I may try weekly periodicity on a shorter time period. We'll see once we get all the data.
 
+Also, clearly, we should expect a high intercorrelation (i.e. multicollinearity) between several of these factors.
+
 Let's start with the major traded currencies, plus a few popular targets for the carry trade. We will use:
 AUD, CAD, CHF, CZK, EUR, GBP, JPY, NOK, NZD, SEK, TRY, USD
 
@@ -30,6 +32,7 @@ Step one is to explore what data is available, and either make changes to the sc
 knitr::opts_knit$set(root.dir = normalizePath(".."))
 library(tidyverse)
 library(Quandl)
+library(quantmod)
 library(lubridate)
 library(ggthemes)
 library(GGally) #for scatter plot matrixes
@@ -49,11 +52,10 @@ library(readxl)
 rate_pages <- c("10Y Swaps", "2Y Swaps", "Forward Points", "1M Swaps", "Implied 1M Fwd")
 RATE_PATH <- "../data/proprietary/rates.xlsx"
 
-rates <- map_dfr(rate_pages, read_xlsx,
-                 path=RATE_PATH,
-                 col_types=c("date",rep("numeric",12)), .id="type")  %>%
-         mutate(type=factor(rate_pages[as.numeric(type)])) %>%
-         gather(asset, value, -type, -Date) %>%
+rates <- map_dfr(rate_pages, read_xlsx, path=RATE_PATH,
+                 col_types=c("date",rep("numeric",12)), .id="type")  %>% #read all worksheets on the xlsx file
+         mutate(type=factor(rate_pages[as.numeric(type)])) %>% #replace numeric id with the rate page names
+         gather(asset, value, -type, -Date, factor_key=T) %>% #flatten the data
          na.omit()
 rates %>% ggplot(aes(x=Date,y=value)) + facet_grid(type~asset, scales="free_y") + 
   geom_line() + ggtitle("Rate Data")
@@ -69,3 +71,143 @@ rates %>% filter(Date >= as.Date("2007-01-01")) %>%
 EUR 1M Swap rate is obviously wrong, too; it's been the same value for nearly 10 years. The implied rate, which is backed out from the forward points, looks more realistic, but it can be messy.
 
 We can backfill Australia and Norway with the 1M swap data. More worrisome is the choppiness in the forward points (and hence the implied rate) for CHF, CZK, and SEK. I've never traded CZK professionally, but I don't recall having issues with CHF or SEK in those time periods. CHF had a peg for a while. Smoothing misses turning points, and probably doesn't reflect what we would do in production, on a day where the rates quoted were out of whack. If we could help it, we probably just wouldn't trade CZK that day.
+
+We'll see what the final carry return values look like in the next notebook, which calculates factors. If necessary, we can benchmark against the Bloomberg generic carry return indexes (which look like, e.g., `AUDUSDCR Curncy`), but I'm still trying to minimize reliance on Bloomberg.
+
+## Spot Rates
+
+Spot rates, at least, should be freely available. QuantMod weirdly insists on assigning output to variables directly in the environment if you call getSymbols with more than one symbol. We'll keep things clean by making a new environment.
+
+```{r raw_data_spot, fig.height=10, fig.width=10}
+env_spot = new.env()
+spot_ticks <- quantmod::getSymbols(Symbols=paste0(levels(rates$asset),"=X"), src="yahoo", 
+                             from=as.Date("2007-01-01"), env=env_spot)
+#I'm not a fan of xts. I'm sure it's fast, but that's irrelevant for what we're doing. This function is going to convert getSymbols output into basic data frames.
+process_spot <- function(ticker) { 
+  x <- get(ticker, envir=env_spot)
+  colnames(x) <- gsub("[A-Z]{3}=X.","",colnames(x))
+  return(data.frame(Date=index(x),coredata(x)))
+}
+spot <- map_dfr(spot_ticks, process_spot, .id="asset") %>%
+          mutate(asset=factor(substr(spot_ticks,1,3)[as.numeric(asset)]))
+spot %>% ggplot(aes(x=Date, y=Close)) + facet_wrap(~asset, ncol=3, scale="free_y") +
+  geom_line() + ggtitle("Spot Rates")
+```
+We have some bad values in the Scandies, plus that obvious misquote in AUD. Let's have a look at the full OHLC for SEK and NOK in the relevant period.
+```{r SEKandNOK}
+spot %>% filter(asset %in% c("SEK","NOK")) %>%
+         filter(Date > as.Date("2007-01-01") & Date <= as.Date("2008-12-31")) %>%
+         select(-Volume, -Adjusted) %>%
+         gather(price,value,-asset,-Date) %>%
+  ggplot(aes(x=Date, y=value, col=price)) + facet_wrap(~asset, ncol=1) +
+      geom_line(alpha=0.75)
+```
+Looks like we'll have to go elsewhere for the Scandy data, start in 2009, or just skip them for now. I'm inclined to skip; it'll make the Gaussian Process run faster.
+
+By convention, some currencies are quoted with the USD as the numeraire, others with the local currency as numeraire (AKA an indirect quote). We could have specified the pairs directly by putting 'USD' at the end of each ticker above. However, the forward points are given relative to the conventional quote. Store a vector of -1s and 1s, then you can either multiply the returns by that vector, or raise the spot rates to the power of that vector to make everything quoted in the same direction. Too bad R doesn't have a proper dictionary class.
+
+Yahoo has everything quoted directly. We will want the opposite when calculating returns in USD, i.e. JPY going from 120 to 100 is a positive return for the USD-denominated investor. We need the conventions when adding in the forward points.
+```{r spot_convention}
+SPOT_CONVENTION <- c(AUD=-1, CAD=1, CHF=1, CZK=1, EUR=-1, GBP=-1,
+                     JPY=1, NOK=1, NZD=-1, SEK=1, TRY=1)
+```
+
+## Equity Indexes
+
+Lastly, equity indexes, at least, should be easy to come by. 
+Maybe I can finally use Quandl for something.
+...nope. Quandl's equity index data is out of date. There seems to be nothing worthwhile for free on Quandl.
+
+```{r equities, fig.height=10, fig.width=10, message=FALSE, warning=FALSE}
+EQUITIES <- c(AUD="^AXJO", CAD="^GSPTSE", CHF="SLIC.SW", CZK="FPXAA.PR", EUR="^STOXX50E",
+              GBP="^FTSE", JPY="^N225", NOK="OBX.OL", NZD="^NZ50", SEK="^OMX",
+              TRY="XU100.IS", USD="^GSPC")
+env_eqy <- new.env()
+eqy_ticks <- quantmod::getSymbols(Symbols=EQUITIES, src="yahoo", 
+                             from=as.Date("2007-01-01"), env=env_eqy)
+process_eqy <- function(ticker) { 
+  tick <- gsub("^\\^","",ticker)
+  x <- get(tick, envir=env_eqy) #quantmod doesn't keep initial '^'s when assigning names
+  colnames(x) <- gsub(paste0(tick,"\\."),"",colnames(x))
+  return(data.frame(Date=index(x),coredata(x)))
+}
+equities <- map_dfr(eqy_ticks, process_eqy, .id="asset") %>%
+          mutate(asset=factor(names(EQUITIES)[as.numeric(asset)]))
+equities %>% ggplot(aes(x=Date, y=Close)) + facet_wrap(~asset, ncol=3, scale="free_y") +
+  geom_line() + ggtitle("Equity Indexes")
+```
+
+Missing some for CHF, NZD, and TRY, and everything for CZK, and NOK. I'm going to see what I can get directly off the Bourse websites. Typically, they want this data propagated.
+```{r extra_eqy}
+env_eqy$CZK <- read_csv2("../data/historicalData_PX.csv") %>%
+  mutate(Date=as.Date(Date, format="%m/%d/%Y")) %>%
+  rename(Close = `Last Close`) %>%
+  select(-`Chg.%`, -X7)
+env_eqy$NOK <- read_excel("../data/OSEBX.xlsx") %>%
+  mutate(Date=as.Date(OSEBX), Open=NA) %>%
+  rename(Close=Last) %>%
+  select(Date, Open, High, Low, Close)
+
+EQUITIES_GOOG <- c(CHF="INDEXSWX:SMI", TRY="INDEXIST:XSIST")
+quantmod::getSymbols(EQUITIES_GOOG, src="google", env=env_eqy)
+process_goog <- function(ticker) { 
+  x <- get(ticker, envir=env_eqy)
+  colnames(x) <- gsub(paste0(ticker,"."),"",colnames(x))
+  return(data.frame(Date=index(x),coredata(x)))
+}
+
+equities_goog <- map_dfr(EQUITIES_GOOG, process_goog, .id="asset") %>%
+  mutate(asset=factor(asset))
+
+bind_rows(google=equities_goog %>% filter(asset=="TRY"),
+          yahoo=equities %>% filter(asset=="TRY"), .id="source") %>%
+  ggplot(aes(x=Date,y=Close, col=source)) + geom_line() + ggtitle("BIST 100")
+
+
+```
+Not exactly a drop-in replacement, but it seems reasonable to replace the blank spot in yahoo data.
+```{r}
+equities %>% filter(asset == "TRY" & is.na(Close)) %>%
+  filter(Date >= as.Date("2014-04-01") & Date <= "2015-03-31") %>%
+  select(Date)
+```
+2014-05-19 to 2015-02-04
+```{r fill_in_BIST, fig.height=10, fig.width=10, message=FALSE, warning=FALSE}
+equities <- bind_rows(equities %>% filter(!(asset == "TRY" & 
+                                              Date >= as.Date("2014-05-19") &
+                                              Date <= as.Date("2015-02-04"))),
+                      equities_goog %>% filter(asset == "TRY" & 
+                                              Date >= as.Date("2014-05-19") &
+                                              Date <= as.Date("2015-02-04")))
+equities %>% ggplot(aes(x=Date, y=Close)) + facet_wrap(~asset, ncol=3, scale="free_y") +
+  geom_line() + ggtitle("Equity Indexes")
+```
+
+
+
+```{r, fig.height=10, fig.width=10, message=FALSE, warning=FALSE}
+equities <- bind_rows(equities %>% select(-Volume, -Adjusted) %>%
+                        filter(!(asset %in% c("CZK","NOK","CHF"))), 
+                      equities_goog %>% filter(asset =="CHF") %>% select(-Volume),
+                      env_eqy$CZK %>% mutate(asset="CZK"),
+                      env_eqy$NOK %>% mutate(asset="NOK") %>%
+                        filter(Date>=as.Date("2007-01-01")))
+equities %>% ggplot(aes(x=Date,y=Close)) + 
+  facet_wrap(~asset, ncol=3, scales = "free_y") +
+  geom_line() + ggtitle("Equity Indexes")
+```
+
+Now we are left with a small discontinuity in NZD. Closer inspection of the data reveals these to be a period with only weekly data, instead of daily. We need equities so we can get the rolling 40-day change. Given that we will be regressing on weekly or monthly periodicity, it's possible this is going to be good enough. I'm a strong believer in garbage in, garbage out, but it's unlikely the final portfolio will be permitted to take big positions in NZD in the first place. We can revisit if the factors look wonky around then (possibly filling in with AUD data), or if the final forecast has clearly been affected.
+
+## Cleanup
+
+Let's clear out the intermediate variables, then save the data and move on to a clean sheet.
+```{r cleanup}
+rm(equities_goog, env_eqy, env_spot, eqy_ticks, EQUITIES, EQUITIES_GOOG, rate_pages,
+   RATE_PATH, spot_ticks, process_eqy, process_goog, process_spot)
+save.image("../data/gathering_data.rData")
+```
+
+# In Summary
+
+Even this small set of data took quite a lot of work to get into manageable shape. We still anticipate issues in calculating the carry return, which is our endogenous variable! It is crucial to get this step right, however. It's ok to take some shortcuts, and backfill some data, where necessary, but we must be aware that we're doing it, and have justifications for our actions. That's what makes the notebook workflow, whether RStudio or Jupyter, so crucial. You can come back in a year's time and see exactly what your logic was.
