@@ -1,0 +1,252 @@
+---
+title: "Calculating Factors"
+output: html_notebook
+---
+
+In the [Gathering Data]('Gathering Data.Rmd'), I stated the factors for the regression in terms of days. However, we're now going to switch to weekly periodicity. This will solve some data problems we encountered, including a period where we only had weekly data for the NZ equity index.
+
+The factors are now as follows:
+
+| Factor           | Description                                 |
+|------------------|---------------------------------------------|
+| Equity_d8W       | The 8 week change in the local equity index |
+| Spot_d8W         | The 8 week change in spot rates             |
+| SwapRate2Y       | The 2Y Swap Rate                            |
+| TwoYear_d8W      | The 8 week change in 2Y Swap rate           |
+| YieldCurve       | The spread between 10Y and 2Y Swaps         |
+| FX_Return (endo) | The spot rate change plus the carry return  |
+
+We'll fill in missing values with LOCF, i.e. Last Observation Carry Forward, then use only Friday Close values in the new dataset. If we had a country that used a different weekend, like Egypt or Algeria, we'd have a problem with this method. Turkey is on the Western standard, though.
+
+Using weekly data also lets us ignore time zones when backtesting a trading strategy based on these forecasts.
+
+The return will be the hardest to calculate, as we are going to use historical forward points data that looks a little unreliable. Let's get the easy stuff out of the way first.
+
+# Setup
+```{r setup}
+library(tidyverse)
+library(lubridate)
+
+#Data from previous step
+load("../data/gathering_data.rData")
+rates <- read_csv("../data/proprietary/rates.csv")
+spots <- read_csv("../data/proprietary/spots.csv")
+```
+
+# Factors
+
+Hadley Wickham's tidy data packages were not built with time series analysis in mind. In my opinion, this is the biggest stumbling block to using the packages, as the syntax is more awkward than just calling rollApply on a 3D matrix of data. The payoff is that nearly everything else is easier, especially sharing data. Package RcppRoll provides some basic fixed-width window functions, but you have to be sure to get the version from github. The one on CRAN is outdated.
+```{r, message=FALSE, warning=FALSE}
+devtools::install_github("kevinushey/RcppRoll")
+library(RcppRoll)
+```
+
+## Equity
+
+We do have a timing issue in that Yahoo apparently gives equity data in the requester's time zone, not in the local time zone. So data for Australia and New Zealand run Sunday-Thursday. We need to adjust those dates.
+```{r antipodal_eqy_adj}
+equities <- equities %>% mutate(Date=ifelse(asset %in% c("AUD","NZD"),  Date + days(1),Date),
+                                Date=as.Date(Date))
+```
+
+Now, we'll start off a new exogenous factors data frame with 8-week change in equities. Note that `mutate` permits you to use newly defined variables in subsequent arguments. We're going to widen the data into a more spreadsheet-like form to ensure that all assets have identical sets of dates.
+```{r}
+eqy_chg <- equities %>% select(asset,Date,Close) %>% spread(asset, Close)
+```
+Whoops. What's going on there?
+```{r}
+equities[18626:18627,]
+```
+18262 looks like bad data.
+```{r}
+equities <- equities[-18626,]
+```
+
+If we hadn't spread, I wouldn't have caught that.
+```{r}
+eqy_chg <- equities %>% select(asset,Date,Close) %>% spread(asset, Close) %>%
+  fill(-Date) %>%
+  filter(wday(Date) == 6) %>% 
+  mutate_at(vars(-Date), funs(roll_sumr(log(.) - lag(log(.)), 8))) %>%
+  gather(asset, eqy_chg, -Date)
+
+eqy_chg %>% ggplot(aes(x=Date,y=eqy_chg)) + facet_wrap(~asset) + 
+  geom_line() + ggtitle("8W Change in Equity Indexes")
+```
+
+Now scale and subtract USD. We need about 25 periods to get a reasonable standard deviation. We could do the above transformation on daily data so that we're not throwing away half a year to scaling. Then we'd need to be more careful about missing daily values, though.
+
+```{r eqy_z}
+eqy_z <- eqy_chg %>% group_by(asset) %>% arrange(Date) %>%
+  mutate(eqy_z=(eqy_chg - roll_meanr(eqy_chg,25)) / roll_sdr(eqy_chg,25)) %>%
+  select(-eqy_chg) %>% group_by(Date) %>% spread(asset,eqy_z) %>% 
+  transmute_if(is_double, funs(. - USD)) %>% 
+  gather(asset,eqy_z,-Date)
+
+eqy_z %>% ggplot(aes(x=Date,y=eqy_z)) + facet_wrap(~asset) + 
+  geom_line() + ggtitle("Scaled Equity Change vs. S&P 500")
+```
+
+Ok. There's our first exog. I'll do an extra gathering step here to make it easier to append new exogs in long format.
+```{r}
+exogs <- eqy_z %>% ungroup() %>% gather(exog,value,-Date,-asset) %>% na.omit()
+rm(eqy_z, eqy_chg)
+```
+
+## Spot_8W
+
+8 week change in spot rate. This will be the same transformation as for `Equity`.
+
+Let's have an initial look at the data.
+```{r spot_graph}
+spots %>% na.omit() %>% ggplot(aes(x=Date,y=spot)) + facet_wrap(~asset, ncol=3, scales = "free_y") +
+  geom_line()
+```
+
+My spot rates are quoted in customary form, and so some have USD numeraires and some don't. I discussed this in (Gathering Data)["Gathering%20Data.Rmd"]. We will want all 8-week changes to face the same direction with respect to the USD.
+
+```{r spot_convention}
+SPOT_CONVENTION <- c(AUD=-1, CAD=1, CHF=1, CZK=1, EUR=-1, GBP=-1,
+                     JPY=1, NOK=1, NZD=-1, SEK=1, TRY=1)
+```
+
+The formula is the same as for equities, except with the spot convention conversion tacked on.
+```{r spot_8w}
+spot_chg <- spots %>% spread(asset, spot) %>%
+  fill(-Date) %>%
+  filter(wday(Date) == 6) %>% 
+  mutate_at(vars(-Date), funs(roll_sumr(log(.) - lag(log(.)), 8))) %>%
+  gather(asset, spot_chg, -Date) %>%
+  mutate(spot_chg_correct_direction= -1 * SPOT_CONVENTION[asset] * spot_chg)
+
+spot_chg %>% gather(type,value,-asset,-Date) %>% na.omit() %>% ggplot(aes(x=Date,y=value,col=type)) + facet_wrap(~asset) + 
+  geom_line(alpha=0.75) + ggtitle("8W Change in Spot Rates")
+```
+
+This, ladies and gentleman, is the magic of vectorization. We're passing a named index of length ~ 10,000 to my 11-unit long SPOT_CONVENTION vector. I'm graphing both above to confirm it worked. Basically, to substitute for not having all the numbers laid out in front of you, as in a spreadsheet, you should graph after every data manipulation. I've skipped a lot of verification graphs I made whilst writing these notebooks for the sake of brevity, but that doesn't mean I didn't look at them.
+
+Lastly, let's normalize the spot changes. We don't need to subtract USD values since they're already versus USD.
+```{r spot_z}
+spot_chg <- spot_chg %>% select(-spot_chg) %>% rename(spd=spot_chg_correct_direction)
+spot_z <- spot_chg %>% group_by(asset) %>% arrange(Date) %>%
+  mutate(spot_z=(spd - roll_meanr(spd,25)) / roll_sdr(spd,25)) %>%
+  select(-spd) 
+
+spot_z %>% ggplot(aes(x=Date,y=spot_z)) + facet_wrap(~asset) + 
+  geom_line() + ggtitle("Scaled Spot Change")
+```
+
+```{r}
+exogs <- bind_rows(exogs, spot_z %>% gather(exog,value,-Date,-asset))
+rm(spot_chg, spot_z)
+```
+
+## 2Y Swap Rate
+
+Switch it into log space. This is an old habit, and probably un-necessary. It does have the advantage of being a material change to raw data for which I don't have the proper licensing to display.
+
+First off, to review, do we have all the 2Y rate data, or will we need to do some filling?
+
+```{r}
+rates %>% filter(type=="2Y Swaps" & Date >=ymd(20070101)) %>% 
+  ggplot(aes(x=Date,y=value)) + facet_wrap(~asset, scale="free_y") + geom_line()
+```
+
+No big gaps, but I'll fill NA below, just in case.
+
+```{r log_2y}
+carry <- rates %>% filter(type == "2Y Swaps" & Date >= ymd(20070101)) %>%
+  select(-type) %>% spread(asset,value) %>% arrange(Date) %>% fill(-Date) %>% #fill in NAs with LOCF
+  mutate_at(vars(-Date), funs(log(1+./100))) %>% #Put in log space
+  mutate_at(vars(-Date), funs(. - USD)) %>% #subtract US rates
+  gather(asset,value,-Date) %>% #put it in the same format as 'exogs'
+  mutate(exog="carry")
+carry %>% ggplot(aes(x=Date,y=value)) + facet_wrap(~asset) + geom_line() +
+  ggtitle("2Y Swaps vs. US in log space")
+```
+
+### A note on scaling as it relates to the final model
+
+So, to scale, or not to scale? The whole purpose of putting 2Y rates in the forecast is to bias the model towards the guaranteed portion of the potential returns in a given currency forward. If we were sure the spot rate wouldn't budge, we could just lever up as much as the bank would let us, borrow JPY, lend TRY, and pocket the interest rate differential. That is the carry trade. My concern is that the Turkish interest rate is so far away from the others that, if we apply a single beta to all 2Y rates, it won't gain any traction, as the impact of TRY 2Y rates on the forecast will swamp all other predictions in contributions to the model. Zellner's Seemingly Unrelated Regression provides one solution to this problem, permitting the modeler to take into account group-level standard deviations while keeping a single mean for the beta. An off-the-shelf multilevel model would permit both an asset-level beta and a global beta. That solves the issue, but greatly increases the number of parameters we will need to fit. Given that we want betas to vary over time, we don't have that much data to work with. 
+For now, I believe I will not scale. We want to compare absolute levels of carry with respect to the numeraire, USD. As a result, it will be necessary to address the differences somehow in the actual model so that Turkey doesn't dominate the residuals.
+
+```{r}
+exogs <- bind_rows(exogs, carry %>% mutate(Date=as.Date(Date)))
+rm(carry)
+```
+
+## TwoYear_d8W
+
+The *change* in 2Y rates, on the other hand, should be one of the most significant drivers of FX rate appreciation.
+
+```{r}
+d_carry <- rates %>% filter(type == "2Y Swaps" & Date >= ymd(20070101)) %>%
+  select(-type) %>% spread(asset,value) %>% arrange(Date) %>% fill(-Date) %>% #fill in NAs with LOCF
+  filter(wday(Date) == 6) %>% #Fridays only
+  mutate_at(vars(-Date), funs(roll_sumr(log(1+./100) - lag(log(1+./100)), 8))) %>% #Sum of changes of rates in log space
+  gather(asset,value,-Date) %>% #put it in the same format as 'exogs'
+  mutate(exog="d_carry")
+d_carry %>% ggplot(aes(x=Date,y=value)) + facet_wrap(~asset) + geom_line() +
+  ggtitle("2Y Swaps in log space")
+```
+
+This one should be normalized, no question. Note that I'm always subtracting the USD values *after* normalization. This is a choice. You could make an argument that it is the change in the spread that should be normalized, not the change in normalized spreads. I'm doing things this way so that it will take less work later to compensate for the greater volatility in Turkey's factors, and hence a greater impact on beta values. Whatever you decide, I think it should at least be consistent across factors, if for nothing else so that you can keep your sanity when trying to interpret changes in factor values and betas once the model is in production.
+
+```{r dc_z}
+dc_z <- d_carry %>% group_by(asset) %>% arrange(Date) %>%
+  mutate(value=(value - roll_meanr(value,25)) / roll_sdr(value,25)) %>% #Rolling 25-week Z-score, as usual
+  spread(asset, value) %>%
+  mutate_at(vars(-Date, -exog), funs(. - USD)) %>% #subtract US change
+  gather(asset, value, -Date, -exog)
+dc_z %>% ggplot(aes(x=Date,y=value)) + facet_wrap(~asset) + 
+  geom_line() + ggtitle("Scaled 2Y Swap Change")
+```
+
+Ok, looks fine.
+```{r}
+exogs <- bind_rows(exogs, dc_z %>% mutate(Date=as.Date(Date)))
+rm(dc_z)
+```
+
+
+## Yield Curve
+
+Traditional estimator of expectations of future rate increases.
+
+As before, first let's confirm the data is ok and present.
+```{r check_rates}
+rates %>% filter(type %in% c("10Y Swaps", "2Y Swaps") & Date >= ymd(20070101)) %>%
+  ggplot(aes(x=Date,y=value,col=type)) + facet_wrap(~asset, scales="free_y") + 
+    geom_line() + ggtitle("Rates")
+```
+
+It's just the spread between these two rates. I'll stick it in log space.
+```{r yc}
+yc <- rates %>% filter(type %in% c("10Y Swaps", "2Y Swaps") & Date >= ymd(20070101)) %>%
+  group_by(asset) %>% arrange(Date) %>% spread(type,value) %>%
+  fill(`10Y Swaps`,`2Y Swaps`) %>% filter(wday(Date) == 6) %>% 
+  mutate(yc=log(1+`10Y Swaps`/100) - log(1+`2Y Swaps`/100)) %>%
+  select(Date, asset, yc) %>% ungroup()
+
+yc %>% ggplot(aes(x=Date,y=yc)) + facet_wrap(~asset) + geom_line() +
+  ggtitle("10Y2Y Swap Spreads")
+```
+
+Looks fine. Scale and subtract USD...
+
+```{r yc_z}
+yc_z <- yc %>% rename(value=yc) %>% 
+  mutate(value=(value - roll_meanr(value,25)) / roll_sdr(value,25)) %>% #Rolling 25-week Z-score
+  spread(asset, value) %>%
+  mutate_at(vars(-Date), funs(. - USD)) %>% #subtract US change
+  gather(asset, value, -Date)
+yc_z %>% ggplot(aes(x=Date,y=value)) + facet_wrap(~asset) + 
+  geom_line() + ggtitle("Scaled Yield Curve Change")
+```
+
+Spikey. I'd be more concerned about those initial values if I didn't know we were starting in 2008 at this point.
+
+## Carry Return (endogenous variable)
+
+Now for the tricky one. We need the weekly change in spot rates after the forward points have been taken into consideration, and adjusting the weekly periodicity rather than monthly. It'll be easier to reduce the implied monthly rates rather than use the forward points directly.
+
