@@ -1,6 +1,10 @@
 ---
 title: "Gathering Data"
-output: html_notebook
+output:
+  html_document: 
+    fig_width: 8.05
+    toc: yes
+  html_notebook: default
 ---
 
 We are going to regress the return of holding 1M FX forwards against a fairly standard set of macroeconomic and technical indicators. In the past, I've done all this using Bloomberg data, but that carries license restrictions. It's my hope I can use freely available data via Quandl's interface.
@@ -47,12 +51,12 @@ Let's start with the hardest stuff and move up. There's no point gathering a bun
 ## Swap Rates
 
 It's quickly become clear that I can't get swap data for free. So, unfortunately, this demo just became difficult for the reader to duplicate, because I don't have the right to distribute the rate data I'm going to use. I will keep looking for substitutes, but I don't want to get bogged down in data as my primary purpose is to demonstrate the model. 
-```{r get_swaps, fig.height=10, fig.width=16.1}
+```{r get_swaps, fig.height=10, fig.width=16.1, message=FALSE, warning=FALSE}
 library(readxl)
 rate_pages <- c("10Y Swaps", "2Y Swaps", "Forward Points", "1M Swaps", "Implied 1M Fwd")
-RATE_PATH <- "../data/proprietary/rates.xlsx"
+RATE_PATH <- "data/proprietary/rates.xlsx"
 
-rates <- map_dfr(rate_pages, read_xlsx, path=RATE_PATH,
+rates <- map_dfr(rate_pages, read_xlsx, path=RATE_PATH, na="#N/A",
                  col_types=c("date",rep("numeric",12)), .id="type")  %>% #read all worksheets on the xlsx file
          mutate(type=factor(rate_pages[as.numeric(type)])) %>% #replace numeric id with the rate page names
          gather(asset, value, -type, -Date, factor_key=T) %>% #flatten the data
@@ -78,7 +82,7 @@ We'll see what the final carry return values look like in the next notebook, whi
 
 Spot rates, at least, should be freely available. QuantMod weirdly insists on assigning output to variables directly in the environment if you call getSymbols with more than one symbol. We'll keep things clean by making a new environment.
 
-```{r raw_data_spot, fig.height=10, fig.width=10}
+```{r raw_data_spot, fig.height=10, fig.width=10, message=FALSE, warning=FALSE}
 env_spot = new.env()
 spot_ticks <- quantmod::getSymbols(Symbols=paste0(levels(rates$asset),"=X"), src="yahoo", 
                              from=as.Date("2007-01-01"), env=env_spot)
@@ -125,10 +129,10 @@ spot %>% filter(Date>=ymd(20070101)) %>%
 spot %>% filter(asset=="AUD") %>% group_by(month(Date)) %>% summarize(Fridays=sum(ifelse(weekdays(Date)=="Friday",1,0)),
                                                                       Sundays=sum(ifelse(weekdays(Date)=="Sunday",1,0)))
 ```
-That is truly malicious. It doesn't even make sense, as I don't think that one hour kicks FX into a new day. Ok, who *else* has spot rates going back that far? Oanda will only give you the last 180 days. Ideally, we want the WMR London Fix, but we'll actually wind up with weekly carry return, and it seems we can't afford to be picky. (NZ Forex)[www.nzforex.co.nz] has historical rates, but they're not the WMR fix, and probably reflect some local time mark.
+That is truly malicious. It doesn't even make sense, as I don't think that one hour kicks FX into a new day. Ok, who *else* has spot rates going back that far? Oanda will only give you the last 180 days. Ideally, we want the WMR London Fix, but we'll actually wind up with weekly carry return, and it seems we can't afford to be picky. [NZ Forex](www.nzforex.co.nz) has historical rates, but they're not the WMR fix, and probably reflect some local time mark.
 
-How about (Open Exchange Rates)[www.openexchangerates.org]? This is getting into territory where Python and pandas do a better job, but let's try to keep things in R. If you don't want to pay, you have to make one API call per date to get this data.
-```{r oer}
+How about [Open Exchange Rates](www.openexchangerates.org)? This is getting into territory where Python and pandas do a better job, but let's try to keep things in R. If you don't want to pay, you have to make one API call per date to get this data.
+```{r oer, eval=FALSE, include=TRUE}
 require(jsonlite)
 dts = rates %>% filter(Date > as.Date("2006-12-31")) %>%
   select(Date) %>% pull() %>% unique() %>% as.Date()
@@ -160,20 +164,22 @@ new_spots <- map_dfr(dts, get_spot,
 Lastly, equity indexes, at least, should be easy to come by. 
 Maybe I can finally use Quandl for something.
 ...nope. Quandl's equity index data is out of date. There seems to be nothing worthwhile for free on Quandl.
-
-```{r equities, fig.height=10, fig.width=10, message=FALSE, warning=FALSE}
+```{r equities, fig.height=10, fig.width=10, message=FALSE, warning=FALSE, cache=TRUE}
+stopifnot(require(xts))
 EQUITIES <- c(AUD="^AXJO", CAD="^GSPTSE", CHF="SLIC.SW", CZK="FPXAA.PR", EUR="^STOXX50E",
               GBP="^FTSE", JPY="^N225", NOK="OBX.OL", NZD="^NZ50", SEK="^OMX",
               TRY="XU100.IS", USD="^GSPC")
 env_eqy <- new.env()
 eqy_ticks <- quantmod::getSymbols(Symbols=EQUITIES, src="yahoo", 
                              from=as.Date("2007-01-01"), env=env_eqy)
+
 process_eqy <- function(ticker) { 
   tick <- gsub("^\\^","",ticker)
   x <- get(tick, envir=env_eqy) #quantmod doesn't keep initial '^'s when assigning names
   colnames(x) <- gsub(paste0(tick,"\\."),"",colnames(x))
   return(data.frame(Date=index(x),coredata(x)))
 }
+
 equities <- map_dfr(eqy_ticks, process_eqy, .id="asset") %>%
           mutate(asset=factor(names(EQUITIES)[as.numeric(asset)]))
 equities %>% ggplot(aes(x=Date, y=Close)) + facet_wrap(~asset, ncol=3, scale="free_y") +
@@ -181,12 +187,13 @@ equities %>% ggplot(aes(x=Date, y=Close)) + facet_wrap(~asset, ncol=3, scale="fr
 ```
 
 Missing some for CHF, NZD, and TRY, and everything for CZK, and NOK. I'm going to see what I can get directly off the Bourse websites. Typically, they want this data propagated.
-```{r extra_eqy}
-env_eqy$CZK <- read_csv2("../data/historicalData_PX.csv") %>%
+
+```{r extra_eqy, message=FALSE, warning=FALSE, cache=TRUE}
+env_eqy$CZK <- read_csv2("data/historicalData_PX.csv") %>%
   mutate(Date=as.Date(Date, format="%m/%d/%Y")) %>%
   rename(Close = `Last Close`) %>%
   select(-`Chg.%`, -X7)
-env_eqy$NOK <- read_excel("../data/OSEBX.xlsx") %>%
+env_eqy$NOK <- read_excel("data/OSEBX.xlsx") %>%
   mutate(Date=as.Date(OSEBX), Open=NA) %>%
   rename(Close=Last) %>%
   select(Date, Open, High, Low, Close)
@@ -209,12 +216,14 @@ bind_rows(google=equities_goog %>% filter(asset=="TRY"),
 
 ```
 Not exactly a drop-in replacement, but it seems reasonable to replace the blank spot in yahoo data.
-```{r}
+```{r, eval=FALSE, include=TRUE}
 equities %>% filter(asset == "TRY" & is.na(Close)) %>%
   filter(Date >= as.Date("2014-04-01") & Date <= "2015-03-31") %>%
   select(Date)
 ```
+(not showing long list of dates)
 2014-05-19 to 2015-02-04
+
 ```{r fill_in_BIST, fig.height=10, fig.width=10, message=FALSE, warning=FALSE}
 equities <- bind_rows(equities %>% filter(!(asset == "TRY" & 
                                               Date >= as.Date("2014-05-19") &
@@ -245,11 +254,11 @@ Now we are left with a small discontinuity in NZD. Closer inspection of the data
 ## Cleanup
 
 Let's clear out the intermediate variables, then save the data and move on to a clean sheet.
-```{r cleanup}
+```{r cleanup, eval=FALSE, include=TRUE}
 rm(equities_goog, env_eqy, env_spot, eqy_ticks, EQUITIES, EQUITIES_GOOG, rate_pages,
    RATE_PATH, spot_ticks, process_eqy, process_goog, process_spot)
 rm(rates, spot) ; message("I can't keep unaltered rates or spot data freely accessible.")
-save.image("../data/gathering_data.rData")
+save.image("data/gathering_data.rData")
 ```
 
 # In Summary

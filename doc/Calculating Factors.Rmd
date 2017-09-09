@@ -1,9 +1,14 @@
 ---
 title: "Calculating Factors"
-output: html_notebook
+output:
+  html_document: 
+    fig_height: 10
+    fig_width: 10
+    toc: yes
+  html_notebook: default
 ---
 
-In the [Gathering Data]('Gathering Data.Rmd'), I stated the factors for the regression in terms of days. However, we're now going to switch to weekly periodicity. This will solve some data problems we encountered, including a period where we only had weekly data for the NZ equity index.
+In the [Gathering Data]('Gathering Data.html') notebook, I stated the factors for the regression in terms of days. However, we're now going to switch to weekly periodicity. This will solve some data problems we encountered, including a period where we only had weekly data for the NZ equity index.
 
 The factors are now as follows:
 
@@ -24,6 +29,7 @@ The return will be the hardest to calculate, as we are going to use historical f
 
 # Setup
 ```{r setup}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
 library(tidyverse)
 library(lubridate)
 
@@ -46,11 +52,11 @@ library(RcppRoll)
 We do have a timing issue in that Yahoo apparently gives equity data in the requester's time zone, not in the local time zone. So data for Australia and New Zealand run Sunday-Thursday. We need to adjust those dates.
 ```{r antipodal_eqy_adj}
 equities <- equities %>% mutate(Date=ifelse(asset %in% c("AUD","NZD"),  Date + days(1),Date),
-                                Date=as.Date(Date))
+                                Date=as.Date(Date, origin=ymd(19700101)))
 ```
 
 Now, we'll start off a new exogenous factors data frame with 8-week change in equities. Note that `mutate` permits you to use newly defined variables in subsequent arguments. We're going to widen the data into a more spreadsheet-like form to ensure that all assets have identical sets of dates.
-```{r}
+```{r error=TRUE}
 eqy_chg <- equities %>% select(asset,Date,Close) %>% spread(asset, Close)
 ```
 Whoops. What's going on there?
@@ -103,7 +109,7 @@ spots %>% na.omit() %>% ggplot(aes(x=Date,y=spot)) + facet_wrap(~asset, ncol=3, 
   geom_line()
 ```
 
-My spot rates are quoted in customary form, and so some have USD numeraires and some don't. I discussed this in (Gathering Data)["Gathering%20Data.Rmd"]. We will want all 8-week changes to face the same direction with respect to the USD.
+My spot rates are quoted in customary form, and so some have USD numeraires and some don't. I discussed this in [Gathering Data]('Gathering Data.html'). We will want all 8-week changes to face the same direction with respect to the USD.
 
 ```{r spot_convention}
 SPOT_CONVENTION <- c(AUD=-1, CAD=1, CHF=1, CZK=1, EUR=-1, GBP=-1,
@@ -167,7 +173,7 @@ carry %>% ggplot(aes(x=Date,y=value)) + facet_wrap(~asset) + geom_line() +
 
 ### A note on scaling as it relates to the final model
 
-So, to scale, or not to scale? The whole purpose of putting 2Y rates in the forecast is to bias the model towards the guaranteed portion of the potential returns in a given currency forward. If we were sure the spot rate wouldn't budge, we could just lever up as much as the bank would let us, borrow JPY, lend TRY, and pocket the interest rate differential. That is the carry trade. My concern is that the Turkish interest rate is so far away from the others that, if we apply a single beta to all 2Y rates, it won't gain any traction, as the impact of TRY 2Y rates on the forecast will swamp all other predictions in contributions to the model. Zellner's Seemingly Unrelated Regression provides one solution to this problem, permitting the modeler to take into account group-level standard deviations while keeping a single mean for the beta. An off-the-shelf multilevel model would permit both an asset-level beta and a global beta. That solves the issue, but greatly increases the number of parameters we will need to fit. Given that we want betas to vary over time, we don't have that much data to work with. 
+So, to scale, or not to scale? The whole purpose of putting 2Y rates in the forecast is to bias the model towards the guaranteed portion of the potential returns in a given currency forward. If we were sure the spot rate wouldn't budge, we could just lever up as much as the broker would let us, borrow JPY, lend TRY, and pocket the interest rate differential. That is the carry trade. My concern is that the Turkish interest rate is so far away from the others that, if we apply a single beta to all 2Y rates, it won't gain any traction, as the impact of TRY 2Y rates on the forecast will swamp all other predictions in contributions to the model. Zellner's Seemingly Unrelated Regression provides one solution to this problem, permitting the modeler to take into account group-level standard deviations while keeping a single mean for the beta. An off-the-shelf multilevel model would permit both an asset-level beta and a global beta. That solves the issue, but greatly increases the number of parameters we will need to fit. Given that we want betas to vary over time, we don't have that much data to work with. 
 For now, I believe I will not scale. We want to compare absolute levels of carry with respect to the numeraire, USD. As a result, it will be necessary to address the differences somehow in the actual model so that Turkey doesn't dominate the residuals.
 
 ```{r}
@@ -248,5 +254,68 @@ Spikey. I'd be more concerned about those initial values if I didn't know we wer
 
 ## Carry Return (endogenous variable)
 
-Now for the tricky one. We need the weekly change in spot rates after the forward points have been taken into consideration, and adjusting the weekly periodicity rather than monthly. It'll be easier to reduce the implied monthly rates rather than use the forward points directly.
+Now for the tricky one. We need the weekly change in spot rates after the forward points have been taken into consideration, and adjusting to weekly periodicity rather than monthly. It'll be easier to reduce the implied monthly rates rather than use the forward points directly.
+
+How does the raw data look?
+
+```{r}
+rates %>% filter(type %in% c("1M Swaps", "Implied 1M Fwd") & Date >= ymd(20070101)) %>% 
+  ggplot(aes(x=Date, y=value, col=type)) + facet_wrap(~asset) + geom_line(alpha=0.75) +
+  ggtitle("1M Rates")
+```
+
+So basically, I'd be fine just using Implied 1M Fwd rates, except that it's going to mess up CZK. Maybe that's ok. It'll cause the CZK returns to be more volatile, but we probably wouldn't want a heavy exposure to those in the first place.
+
+We also need to backfill AUD, CZK, and NOK with 1M swap rates. The tidyverse function for backfilling is [coalesce](http://dplyr.tidyverse.org/reference/coalesce.html). We could have done something more complicated, like set the early NOK history to show the same relative changes as SEK. Who would substitute for CZK, then? Somehow I doubt the now-defunct SKK has better historical forward rate data than CZK.
+
+```{r}
+filled_rates <- rates %>% filter(Date >= ymd(20070101)) %>%
+    spread(type,value) %>% group_by(asset) %>% arrange(Date) %>% 
+    fill(-Date, -asset) %>% #Fill will do LOCF, but won't catch beginning period NAs.
+    mutate(`Implied 1M Fwd`=case_when(asset %in% c("AUD","CZK","NOK") ~ 
+                                        coalesce(`Implied 1M Fwd`,`1M Swaps`),
+                                      TRUE ~ `Implied 1M Fwd`)) %>%
+    gather(type, value,-Date,-asset) %>% #case_when probably wasn't necessary, but it's a good general rule never to do more than you want to.
+    ungroup()
+filled_rates %>% filter(type %in% c("1M Swaps", "Implied 1M Fwd")) %>%
+  ggplot(aes(x=Date, y=value, col=type)) + facet_wrap(~asset) + geom_line(alpha=0.5) +
+  ggtitle("Filled 1M Rates")
+```
+
+Ok, raise these to the 1/52, convert to log space, and add to the spot return.
+
+```{r}
+carry <- filled_rates %>% filter(type == "Implied 1M Fwd") %>% 
+   mutate(carry=log((1+value/100)^(1/52)), Date=as.Date(Date)) %>% 
+   select(-type, -value)
+spot_chg <- spots %>% spread(asset, spot) %>%
+  fill(-Date) %>%
+  filter(wday(Date) == 6, Date >=ymd(20070101)) %>% 
+  mutate_at(vars(-Date), funs(log(.) - lag(log(.)))) %>%
+  gather(asset, spot_chg, -Date) %>%
+  mutate(spd= -1 * SPOT_CONVENTION[asset] * spot_chg) %>%
+  select(Date, asset, spd)
+endo <- left_join(spot_chg, carry, by=c("Date", "asset")) %>%
+  mutate(endo=spd + carry)
+endo %>% gather(series,value,-Date,-asset) %>% na.omit() %>%
+  ggplot(aes(x=Date,y=value)) + facet_grid(series~asset, scales="free_y") + geom_line(alpha=0.65)
+```
+
+Hence the aphorism that the carry trade is like picking up pennies in front of a steam roller.
+
+As a final sanity check, how do the cumulative endogenous returns look over time?
+```{r}
+endo %>% na.omit() %>% group_by(asset) %>% arrange(Date) %>%
+  mutate(`Cumulative Return`=cumsum(endo)) %>%
+  ggplot(aes(x=Date,y=`Cumulative Return`)) + 
+  facet_wrap(~asset) + geom_line() + ggtitle("Endogenous Variable")
+```
+Looks about right. The Yen in 2016 is a good tell-tale, as is the Euro in 2014 for the other customary quote direction.
+
+Ok, clean up and save transformed data. We don't need to worry about proprietary data anymore since the factors represent substantial changes to the raw form.
+
+```{r cleanup}
+rm(list=ls()[-grep("endo|exogs",ls())])
+save.image("../data/calculating_factors.rData")
+```
 
