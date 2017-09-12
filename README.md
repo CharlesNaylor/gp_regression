@@ -8,9 +8,9 @@ You can find comments and reasoning in a set of notebooks in the /doc directory.
 
 ## Process
 
-  1.  [Gathering Data](http://htmlpreview.github.com/?https://github.com/billWalker/gp_regression/blob/master/doc/Gathering%20Data.html): Initial raw data retrieval and cleanup.
-  2.  [Calculating Factors](http://htmlpreview.github.com/?https://github.com/billWalker/gp_regression/blob/master/doc/Calculating%20Factors.html): Turning raw data into normalized factors.
-  3.  [Specifying the Model](https://github.com/billWalker/gp_regression/blob/master/doc/Specifying%20the%20Model.Rmd)
+  1.  [Gathering Data](https://cdn.rawgit.com/billWalker/gp_regression/f34154e9/doc/Gathering_Data.html): Initial raw data retrieval and cleanup.
+  2.  [Calculating Factors](https://cdn.rawgit.com/billWalker/gp_regression/9a06ddfa/doc/Calculating_Factors.html): Turning raw data into normalized factors.
+  3.  [Specifying the Model](https://cdn.rawgit.com/billWalker/gp_regression/9a06ddfa/doc/Specifying%20the%20Model.nb.html)
   4.  [Model Validation]
   5.  [Forecasting]
   6.  [Model Comparison]
