@@ -1,0 +1,125 @@
+---
+title: "Specifying the Model, part 1- Validation"
+output: html_notebook
+---
+
+# Model Overview
+
+This is following [Jim Savage's Bayesian Workflow](http://nbviewer.jupyter.org/github/QuantEcon/QuantEcon.notebooks/blob/master/IntroToStan_basics_workflow.ipynb)
+
+We are going to run a dynamic linear regression, in which inputs X relate to asset returns Y on the basis of betas B, which vary over time as a Gaussian process. Gaussian processes are discussed at length in chapter 18 of the Stan reference manual.
+
+In full:
+$$
+  y_{t+1} \sim MN(\beta_t X_t, \Sigma_y) \\
+  \beta_i \sim MN(0, \Sigma_{\beta_i}) \\
+  \Sigma(\beta)_{i,j} = \alpha^2exp\left (-\frac{1}{2\rho^2}\sum_{d=1}^D(x_{i,d}-x_{j,d})^2 \right ) + \sigma^2\\
+  \rho \sim \gamma(2,2) \\
+  \alpha \sim cauchy(0, 1) \\
+  \sigma_{i,j} \left\{\begin{matrix}
+ \sim N(0,1) & i \equiv j\\
+ 0 & i \neq j
+\end{matrix}\right.
+$$
+
+I'll try to go through the whole thing in plain english:
+
+1) next period's Y depends on this period's inputs X, weighted by this period's betas $\beta$. Y's move together with covariance $\Sigma_y$. MN stands for the multivariate-normal distribution.
+
+2) Each $\beta_i$ is distributed multivariate-normal, with $\mu$ = 0. The $\beta_i$ is correlated with itself over all times $t \in {1 \dotsi T}$ with covariance matrix $\Sigma_{\beta_i}$.
+
+3) Each $\Sigma_{\beta_i}$ is a Gaussian process, in which the degree of similarities between elements varies according to their squared Euclidian distance from one another (cf. Stan Reference Manual 2.17.0, pp.246-247).
+
+4) $\rho$ and $\alpha$ are parameters defining the speed at which $\Sigma_{\beta}$ terms become unrelated to each other. $\sigma^2$ is the scale of the noise term in the regression.
+
+
+**NB**:
+* We are assuming that betas are independent of each other, *which is wrong*. There are just too many parameters for my laptop to have a hope of entangling the Gaussian processes. Rob Trangucci has an [example](https://github.com/stan-dev/example-models/blob/master/misc/gaussian-process/gp-fit-multi-output.stan) of a Gaussian process with a single input parameter and multiple, correlated outputs.
+
+We are going to start with a single-asset implementation of that model. 
+
+**NB** RStudio actually provides a `stan` chunk-style, which will compile the model when executed. However, in my experience RStudio gets unstable when one runs a large stan model inside it. Additionally, the chunks don't show up when you compile notebooks to html with knitr. I'm just going to state the model here, and later we'll run it using cmdstan. 
+
+```
+// multi-dimensional input latent variable GP with single y
+// cf. manual 2.17.0, pp 253-254
+data {
+  int<lower=1> N;
+  int<lower=1> D;
+  vector[D] x[N]; //Exogs for single currency
+  vector[N] y;
+}
+transformed data {
+  real delta = 1e-9;
+}
+parameters {
+  real<lower=0> rho;
+  real<lower=0> alpha;
+  real<lower=0> sigma;
+  vector[N] eta;
+}
+model {
+  vector[N] f;
+  {
+    matrix[N, N] K = cov_exp_quad(x, alpha, rho);
+    matrix[N, N] L_K;
+    //perturb diagonal elements
+    for (n in 1:N) 
+      K[n, n] = K[n, n] + delta;
+    L_K = cholesky_decompose(K);
+    f = L_K * eta;
+  }
+
+  rho ~ inv_gamma(5, 5); 
+  alpha ~  normal(0, 1); 
+  sigma ~ normal(0, 1); 
+  to_vector(eta) ~ normal(0, 1); 
+
+  y ~ normal(f, K); 
+}
+
+```
+
+Before we implement that model on actual data, let's follow the workflow I linked at the top and see if it can recover a set of known parameters.
+
+```{r setup}
+library(tidyverse)
+library(rstan) #2.17 hasn't been released yet for rstan, but we'll be using cmdstan 2.17.
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+load("../data/calculating_factors.rData")
+```
+
+We'll need to write a function in stan that can simulate results when given the parameters. The model I stated above can simulate Ys (and the distribution of those simulated Ys gives you the forecast distribution), but the code has $\beta$, $\alpha$, and $\sigma$ as factors. We want to specify $\alpha$ and $\sigma$, generate fake data on the basis of that specification, then apply the model above to see if it can recover them.
+```{r stan_sim_func}
+sim_code <- stanc(model_name='single_gp_rng', 
+  model_code="//Simulate single y vector
+  functions {
+    vector single_gp_rng(int N, int D, vector[] x, 
+        real alpha, real rho, real sigma, vector eta) {
+      vector[N] y;
+      vector[N] mu;
+      vector[N] f;
+      matrix[N, N] K = cov_exp_quad(x, alpha, rho);
+      matrix[N, N] L_K;
+      //perturb diagonal elements
+      for (n in 1:N) 
+        K[n, n] = K[n, n] + 1e-9;
+      L_K = cholesky_decompose(K);
+      f = L_K * eta;
+      
+      for(n in 1:N) 
+        y[n] = normal_rng(f[n], K[n,n]); 
+      return y;
+    }
+  }
+  ")
+rstan::expose_stan_functions(sim_code)
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
