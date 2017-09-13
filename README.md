@@ -10,7 +10,7 @@ You can find comments and reasoning in a set of notebooks in the /doc directory.
 
   1.  [Gathering Data](https://cdn.rawgit.com/billWalker/gp_regression/f34154e9/doc/Gathering_Data.html): Initial raw data retrieval and cleanup.
   2.  [Calculating Factors](https://cdn.rawgit.com/billWalker/gp_regression/9a06ddfa/doc/Calculating_Factors.html): Turning raw data into normalized factors.
-  3.  [Specifying the Model](https://cdn.rawgit.com/billWalker/gp_regression/9a06ddfa/doc/Specifying%20the%20Model.nb.html)
+  3.  [Specifying the Model](https://cdn.rawgit.com/billWalker/gp_regression/9a06ddfa/doc/Specifying_the_Model-Single_Y.html)
   4.  [Model Validation]
   5.  [Forecasting]
   6.  [Model Comparison]
