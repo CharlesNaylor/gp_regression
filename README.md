@@ -2,7 +2,7 @@
 
 ## Summary
 
-This code will demonstrate the use of Gaussian processes in a dynamic linear regression, as a replacement for the Kalman Filter.
+This code will demonstrate the use of Gaussian processes in a dynamic linear regression, as a replacement for the Kalman Filter. More generally, Gaussian processes can be used in nonlinear regressions in which the relationship between xs and ys is assumed to vary smoothly with respect to the values of the xs. We will assume that the relationship varies smoothly with respect to time, but is static across values of xs within a given time. If you are already familiar with Gaussian processes, this might seem unusual. From what I can tell in the literature, this is an uncommon formulation.
 
 You can find comments and reasoning in a set of notebooks in the /doc directory.
 
@@ -10,7 +10,8 @@ You can find comments and reasoning in a set of notebooks in the /doc directory.
 
   1.  [Gathering Data](https://cdn.rawgit.com/billWalker/gp_regression/f34154e9/doc/Gathering_Data.html): Initial raw data retrieval and cleanup.
   2.  [Calculating Factors](https://cdn.rawgit.com/billWalker/gp_regression/9a06ddfa/doc/Calculating_Factors.html): Turning raw data into normalized factors.
-  3.  [Specifying the Model](https://cdn.rawgit.com/billWalker/gp_regression/9a06ddfa/doc/Specifying_the_Model-Single_Y.html)
+  3.  [Specifying the Model - Single Y](https://cdn.rawgit.com/billWalker/gp_regression/9a06ddfa/doc/Specifying_the_Model-Single_Y.html)
+  3.  [Specifying the Model - Full Model](https://cdn.rawgit.com/billWalker/gp_regression/9a06ddfa/doc/Specifying_the_Model-Full Model.html)
   4.  [Model Validation]
   5.  [Forecasting]
   6.  [Model Comparison]
@@ -25,6 +26,6 @@ With a Gaussian process (GP), we can assume that parameters are related to one a
 
 With advances in processing power, this is less of a problem than it used to be. An upcoming version of Stan is promising GPU-powered matrix inversion, and should really kick off the use of GPs in production.
 
-As a motivating example, I'm going to use a factor regression of macroeconomic and technical indicators to forecast returns to some major currency pairs. Exploratory analysis is done in R, the model is written in Stan, and data munging is Python. 
-For the sake of reproducibility, I have tried to use only freely available data. Swap rates do not seem to be available for free, however.
+As a motivating example, I'm going to use a factor regression of macroeconomic and technical indicators to forecast returns to some major currency pairs. Exploratory analysis is done in R, and the model is written in Stan. A production model would be written in Python, but I don't know that we'll get that far here.
+
 

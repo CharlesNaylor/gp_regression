@@ -65,7 +65,8 @@ Before we implement that model on actual data, let's follow the workflow I linke
 
 ```{r secret_load, include=FALSE}
 #Load from saved data as I don't want to have to run these 90-minute generative processes every time I call knitr to html.
-load("../data/specifying_the_model-single_y.rData")
+#This file is too big for github, hence the 'full' qualifier. Stan objects are big.
+load("../data/specifying_the_model-single_y-full.rData")
 ```
 
 We'll need to write a function in stan that can simulate results when given the parameters. The model I stated above can simulate Ys (and the distribution of those simulated Ys gives you the forecast distribution), but the code has $\beta$, $\alpha$, and $\sigma$ as factors. We want to specify $\alpha$ and $\sigma$, generate fake data on the basis of that specification, then apply the model above to see if it can recover them.
@@ -172,6 +173,6 @@ kable(tibble(`SD of sim_y`=sd(sim_y),  `median fitted alpha`= median(extract(sin
 So maybe the difference comes from my generating process, not the fit on the simulated data.
 
 ```{r save_data, eval=F}
-save.image("../data/specifying_the_model-single_y.rData")
+save(endo, exogs, sim_y, single_fit, file="../data/specifying_the_model-single_y.rData")
 ```
 

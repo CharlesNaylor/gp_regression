@@ -35,7 +35,7 @@ model {
         f = L_K * beta * diag_pre_multiply(alpha, L_Omega)';
       }
   }
-  alpha ~ normal(0, 1);
+  alpha ~ normal(0.25, 1);
   sigma ~ normal(0, 1);
   to_vector(beta) ~ normal(0, 1);
   L_Omega ~ lkj_corr_cholesky(3);
@@ -47,6 +47,6 @@ model {
 generated quantities {
   matrix[N,K] y_sim;
   for(n in 1:N)
-    y_sim[n] = to_row_vector(normal_rng(to_vector(beta[n]*x[n]),
+    y_sim[n] = to_row_vector(multi_normal_cholesky_rng(to_vector(beta[n]*x[n]),
                           L_y_cov));
 }
