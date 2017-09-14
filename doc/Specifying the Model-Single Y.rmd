@@ -170,3 +170,8 @@ kable(tibble(`SD of sim_y`=sd(sim_y),  `median fitted alpha`= median(extract(sin
 ```
 
 So maybe the difference comes from my generating process, not the fit on the simulated data.
+
+```{r save_data, eval=F}
+save.image("../data/specifying_the_model-single_y.rData")
+```
+
