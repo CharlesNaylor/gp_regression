@@ -1,52 +1,44 @@
 data {
   int<lower=1> N; // # of dts
+  int<lower=1> A; // # of endos
   int<lower=1> B; // # of betas
-  matrix[N,K] y;
-  matrix[B,K] x[N]; // Exog
-  cov_matrix[K] y_cov; // contemporaneous covariance of ys
-  int sim; // If this is flagged, dont fit, just generate ys.
+  matrix[N,A] y;
+  matrix[B,A] x[N]; // Exog
+  cov_matrix[A] y_cov[N]; //contemporaneous covariance of ys
+  int sim; //If this is flagged, dont fit, just generate ys.
 }
 transformed data {
   real t[N];
-  matrix[K,K] L_y_cov;
-  t[1] = 1;
-  for(n in 2:N)
-    t[n] = t[n-1]+1;
-  L_y_cov = cholesky_decompose(y_cov);
+  matrix[A,A] L_y_cov[N];
+  vector[N] mu = rep_vector(0, N);
+  for(n in 1:N) {
+    t[n] = n;
+    L_y_cov[n] = cholesky_decompose(y_cov[n]);
+  }
 }
 parameters {
   matrix[N,B] beta;
-  vector<lower=0>[B] alpha;
+  real<lower=0> alpha[B];
   real<lower=0> sigma[B];
-  real<lower=0> rho[B];
-  cholesky_factor_corr[B] L_Omega;
+  real<lower=0> length_scale[B];
 }
 model {
-  matrix[N,B] f; // factor effects
+  to_vector(alpha) ~ normal(0.5, 1);
+  to_vector(sigma) ~ cauchy(0, 1);
   {
-      matrix[N,N] K = cov_exp_quad(x, 1.0, rho);
-      matrix[N,N] L_K;
-      
-      // diagonal elements
-      for(n in 1:N) { 
-        K[n,n] = K[n,n] + delta;
-     
-        L_K = cholesky_decompose(K);
-        f = L_K * beta * diag_pre_multiply(alpha, L_Omega)';
+      matrix[N,N] cov[B];
+      for(b in 1:B) 
+        cov[b] = cov_exp_quad(t, alpha[b], length_scale[b]);
+      for(n in 1:N) {
+        for(b in 1:B)
+          cov[b, n, n] = cov[b, n, n] + square(sigma[b]);
+      }
+      for(b in 1:B)
+        beta[,b] ~ multi_normal_cholesky(mu, cholesky_decompose(cov[b]));
+      if(sim==0) {
+        for(n in 1:N)
+          y[n] ~ multi_normal_cholesky(beta[n] * x[n], L_y_cov[n]);
       }
   }
-  alpha ~ normal(0.25, 1);
-  sigma ~ normal(0, 1);
-  to_vector(beta) ~ normal(0, 1);
-  L_Omega ~ lkj_corr_cholesky(3);
-  rho ~ inv_gamma(5, 5);
-  if(sim==0) {
-      to_vector(y) ~ normal(to_vector(f), sigma);
-  }
 }
-generated quantities {
-  matrix[N,K] y_sim;
-  for(n in 1:N)
-    y_sim[n] = to_row_vector(multi_normal_cholesky_rng(to_vector(beta[n]*x[n]),
-                          L_y_cov));
-}
+

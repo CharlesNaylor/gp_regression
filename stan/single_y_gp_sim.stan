@@ -4,7 +4,7 @@
 data {
   int<lower=1> N;
   int<lower=1> D;
-  matrix[N, D] x; //Exogs for single currency
+  matrix[N, D] x; //Exogs
   real<lower=0> rho;
   vector<lower=0>[D] alpha;
   real<lower=0> sigma;
