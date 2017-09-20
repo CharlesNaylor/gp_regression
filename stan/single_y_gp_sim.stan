@@ -1,6 +1,26 @@
 // multi-dimensional input latent variable GP with single y
 // cf. manual 2.17.0, pp 253-254, 
 // Gaussian Processes for Machine Learning, pp 119-122
+functions {
+  matrix eta_rng(int N, int D, vector[D] alpha, 
+                vector[D] rho, matrix[D,D] Omega) {
+    matrix[N,N] K;
+    matrix[N,N] L_K;
+    matrix[D,D] L_Omega;
+    matrix[N,D] f; //mu
+    real time[N];
+
+    for(n in 1:N)
+      time[n] = n;
+    K = cov_exp_quad(time, alpha, rho);
+    for(n in 1:N)
+      K[n,n] = K[n,n] + 1e-9;
+    L_K = cholesky_decompose(K);
+    
+    L_Omega = cholesky_decompose(Omega);
+    return multi_normal_cholesky_rng(rep_vector(0,N), L_K);
+  }
+}
 data {
   int<lower=1> N;
   int<lower=1> D;
