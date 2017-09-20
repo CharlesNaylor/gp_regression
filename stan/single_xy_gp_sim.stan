@@ -1,4 +1,4 @@
-// multi-dimensional input latent variable GP with single y
+// multi-dimensional input latent variable GP with single x and y
 // cf. manual 2.17.0, pp 253-254, 
 // Gaussian Processes for Machine Learning, pp 119-122
 functions {
