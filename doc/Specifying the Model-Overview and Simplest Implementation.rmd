@@ -22,7 +22,6 @@ $$
 \begin{matrix}\alpha_d \sim N(0, 1) & \alpha > 0 \end{matrix}
 $$
 
-
 $$
 \delta_{i,j} \{\begin{matrix}
      \sim N(0,1) & i \equiv j\\
@@ -31,9 +30,15 @@ $$
 $$
 
 $$
-\Sigma_\beta = \Omega'\tau\Omega \\
-\Omega \sim LJKCorr(3) \\
-\tau \sim cauchy(3), \tau > 0
+\Sigma_\beta = \Omega_\beta'\tau\Omega_\beta \\
+\Omega_\beta \sim LJKCorr(3) \\
+\tau_d \sim cauchy(3), \tau_d > 0
+$$
+
+$$
+\Sigma_y = \Omega_y'\sigma\Omega_y \\
+\Omega_y \sim LJKCorr(3) \\
+\sigma_a \sim cauchy(3), \sigma_a > 0
 $$
 
 In plain English:
@@ -47,6 +52,8 @@ In plain English:
 4) $\rho$ and $\alpha$ are parameters defining the speed at which $\Sigma_{N,\beta}$ terms become unrelated to each other. $\delta$ is the scale of the noise term in the regression, and guarantees a positive-definite matrix. Betas are not independent of each other, but their parameters $\alpha$ and $\rho$ *are*. 
 
 5) $\Sigma_\beta$ is the covariance matrix between betas. My exogenous variables are correlated. For example, I have both the relative level of 2Y rates, and the relative level of *changes* in 2Y rates. We account for this with two additional parameters, $\Omega$, representing the correlation, and $\tau$, representing the variance. $\tau$ is going to interact with $\Sigma_{N, \beta} as a whole, so we'll need to do some testing to decide what the prior distribution should look like. The ratio between the two is going to determine whether covariation or variation over time dominate, and we want the variation over time to be more important. I'm putting a half-cauchy distribution in for now, as that's the prior the mc-stan guys recommend, and it is weighted closer to 0 than, say, the Gaussian distribution.
+
+6) Similarly, $\Sigma_y$ is the covariance matrix between endogenous variables, indexed as $a$.
 
 We are going to start with a single asset, single beta parameter implementation of that model. Here, $\beta$ becomes just multivariate-normal with respect to time, and `y` becomes normally distributed.
 

@@ -1,0 +1,210 @@
+---
+title: "Model Validation - Single X, Multiple Y"
+output:
+  html_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+---
+# Gaussian Process Regression for Multiple Assets, single factor
+
+Following on from the [model overview and simple implementation notebook](https://rawgit.com/billWalker/gp_regression/add_single_xy/doc/Specifying%20the%20Model-Overview%20and%20Simplest%20Implementation.rmd), we'll now expand from a single Y to a set of multiple, correlated Ys.
+
+In equation form:
+$$
+  y_{t+1} \sim N(\beta_t X_t, \Sigma_y) \\
+  \beta \sim N(0, \Sigma_N) \\
+  \Sigma(N)_{i,j} = \alpha^2exp\left (-\frac{1}{2\rho^2}(i-j)^2 \right ) + \delta_{i,j}\\
+  \rho \sim \gamma^{-1}(5,5) \\
+\begin{matrix}\alpha \sim N(0, 1) & \alpha > 0 \end{matrix}
+\delta_{i,j} \{\begin{matrix}
+     \sim N(0,1) & i \equiv j\\
+     0 & i \neq j
+ \end{matrix}
+$$
+
+$$
+\Sigma_y = \Omega_y'\sigma\Omega_y \\
+\Omega_y \sim LJKCorr(3) \\
+\sigma_a \sim cauchy(3), \sigma_a > 0
+$$
+
+We need two more parameters to define $\Sigma_y$. Following best practices in the Stan manual, we separate correlations and variances. In the actual code, we'll be estimating the Cholesky decomposition of correlations, as it is much easier to generate stable positive-definite matrixes this way.
+
+As before, we'll validate the new model by simulating fake data with known parameters, then seeing if we can recover those parameters.
+
+```{r setup}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(tidyverse)
+library(rstan) #2.17 hasn't been released yet for rstan, but we'll be using cmdstan 2.17.
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+```
+
+Here's the simulation code:
+```{r show_sim_gp}
+cat(read_file("../stan/single_x_many_y_gp_sim.stan"))
+```
+As I mention in the code, because there seems to be no efficient way to convert from a matrix to an array of row_vectors, I'm having to loop to create the XBs ($\mu_y$). I would prefer to have the last line be 
+`y ~ multi_normal_cholesky(diag_pre_multiply(eta,x), L_y);`, and skip creating `mu_y` altogether.
+
+## Generate Fake Data
+
+```{r secret_load, include=FALSE}
+#Load from saved data as I don't want to have to run these generative processes every time I call knitr to html.
+#This file is too big for github, hence the 'full' qualifier. Stan objects are big.
+load("../data/specifying_the_model-single_x_multiple_y-full.rData")
+```
+
+I'll generate the $\beta$ using a Stan function, as in the previous notebook. I'll also be generating the Sigma_y partly using a Stan function, as the Lewandowski onion method is not implemented in R (at least not in any package I know).
+```{r stan_sim, eval=F}
+sim_model <- stan_model(model_name='single_x_many_y_gp_sim',
+                   model_code=read_file("../stan/single_x_many_y_gp_sim.stan"))
+```
+
+```{r generate_fake_data}
+rstan::expose_stan_functions(sim_model)
+SEED <- 8675309 #Let's keep the randomness consistent.
+set.seed(SEED) 
+fake_data = list(N=100, A=3, alpha=0.25, rho=1.0)
+fake_data <- within(fake_data, {
+  x <- matrix(rnorm(N*A), nrow=N, ncol=A)
+  eta <- eta_rng(N, alpha, rho,seed=SEED)
+  
+  L_Omega <- L_Omega_rng(A, 3)
+  sigma_y <- sqrt(c(0.05, 0.1, 0.15))
+  Sigma_y <- diag(sigma_y) %*% tcrossprod(L_Omega) %*% diag(sigma_y)
+})
+```
+
+Let's get a feeling for the lkj_corr so we know how to set the priors.
+```{r graph_lkj_rng}
+cross(list(shape=1:10,iter=1:100)) %>% 
+  map_dfr(function(x, seed, A){ 
+    rho <- tcrossprod(L_Omega_rng(A, x$shape,seed=seed)) %>% as_tibble() %>%
+      rename_all(funs(LETTERS[as.numeric(substr(.,2,3))])) %>%
+      mutate(asset=LETTERS[seq.int(A)]) %>%
+      gather(asset2,value,-asset) #much uglier than melt(tcrossprod(x))
+    rho %>% mutate(shape=x$shape, iteration=x$iter)
+  }, seed=SEED, A=3) %>%
+  ggplot(aes(x=as.factor(shape),y=value)) + facet_grid(asset~asset2) + geom_violin() +
+    ggtitle("Random Correlations for different shape parameters") + xlab("shape")
+```
+Here's what the correlations look like based on the actual weekly returns:
+```{r actual_endos}
+stopifnot(require(reshape2))
+load("../data/calculating_factors.rData")
+endo %>% select(-spd,-carry) %>% na.omit() %>% 
+  spread(asset,endo) %>% select(-Date) %>% cor() %>% 
+  melt() %>% filter(value < 1) %>%
+  ggplot(aes(x=value)) + geom_density() +
+    ggtitle("Distribution of Weekly FX return correlations")
+```
+The great mass is a bit above 0.5, which you might chalk up to the predominance of USD-specific drivers in most rates.
+
+I would say we could set the LKJ prior at 5 or 6 and not miss much. Realistically, when it comes time to make this model more efficient, we might end up just specifying an exponentially-weighted covariance matrix, rather than trying to fit it. The LJK prior is more important for the betas, as we don't know how they are related going in. We could fit a multivariate GARCH within this model, but I haven't found that those add much value over weighted covariance, at least for weekly FX.
+
+```{r graph_fake_data}
+fake_data$eta %>% as_tibble() %>% mutate(t=seq.int(100)) %>% 
+  gather(beta,value, -t) %>% ggplot(aes(x=t,y=value)) +
+  geom_line() + ggtitle("Fake beta over time")
+```
+
+```{r graph_fake_XB}
+with(fake_data,x*eta) %>% as_tibble() %>% mutate(t=seq.int(100)) %>% 
+  gather(beta,value, -t) %>% ggplot(aes(x=t,y=value, col=beta)) +
+  geom_line() + ggtitle("Fake XBs over time")
+```
+
+What does the covariance look like?
+```{r fake_cov}
+print(tcrossprod(fake_data$L_Omega))
+print(fake_data$Sigma_y)
+```
+
+
+Now for the ys.
+```{r fake_endo, eval=F}
+sim_samples <- sampling(sim_model, fake_data, cores=2, chains=2)
+```
+
+Already taking significantly longer than the last time.
+
+How do these ys look? sim_y is going to be a 3D array, and the new 'tidy data' world only wants dataframes. I've always used `melt` from `reshape2` to put arrays into shape. I guess this is deprecated now, but it seems to be faster than `adply` from `plyr`, and that package was replaced by `dplyr` in any case. My guess would be that if things keep going the way they have been, `rstan::extract` is going to put parameters in data.frames only before long anyway.
+```{r graph_sim_y}
+library(reshape2)
+sim_y <- extract(sim_samples)$y
+sim_y <- melt(sim_y, varnames = c("iteration", "Date", "asset"))
+sim_y %>% filter(iteration %in% sample.int(2000, 100)) %>%
+  ggplot(aes(x=Date,y=value, group=iteration)) + facet_wrap(~asset) +
+  geom_line(alpha=0.05) +  ggtitle("Y sims")
+```
+Hey, apart from scale, these actually look more like the Y values we might expect from weekly currency returns!
+This is with correlations:
+```{r}
+cov2cor(fake_data$Sigma_y)
+```
+
+```{r rho_sim_y}
+sim_y %>% spread(asset,value) %>% select(-iteration, -Date) %>% cor()
+```
+
+The XBs affect the final value, too. Let's see what Stan recovers.
+
+## Recover Known Parameters
+```{r recover_params, eval=F}
+single_gp_model <- stan_model(file="../stan/single_x_many_y_gp.stan", 
+                              model_name='single_x_many_y_gp')
+fake_data$y <- sim_y %>% group_by(asset, Date) %>% summarize(value=median(value)) %>% spread(asset, value) %>% select(-Date) %>% as.matrix()
+ 
+single_fit <- sampling(single_gp_model, fake_data[c("N","A","x","y")])
+```
+
+This one took less than 4 minutes! Are we sure it ran properly? 
+```{r chain_mixing}
+stopifnot(require(bayesplot))
+mcmc_trace(as.array(single_fit), pars=c("alpha", "rho", "L_omega[2,1]", 
+                                        "L_omega[3,2]", "L_omega[3,1]",
+                                            paste0("sigma_y[",seq.int(fake_data$A),"]")))
+```
+
+Looks like we came up far too low on the $\sigma_y$s.
+
+```{r, message=FALSE, warning=FALSE}
+mcmc_intervals(as.array(single_fit), pars=c("alpha", "rho", "L_omega[1,1]", 
+                                            "L_omega[2,1]", "L_omega[2,2]",
+                                            "L_omega[3,1]", "L_omega[3,2]", "L_omega[3,3]",
+                                            paste0("sigma_y[",seq.int(fake_data$A),"]")))
+```
+
+
+```{r}
+fake_data$L_Omega
+```
+
+$\Omega_L$ is passable, although I think 2,1 is out of range.
+
+I think in the next complication I'm going to with the exponentially-weighted covariance I mentioned before for the endos. When we get to multiple $\beta$s, having two freely determined correlation matrixes is probably going to be too much to fit anyway. Additionally, this way we can have the covariance move over time without specifying $\frac{A^2-A}{2}$ additional Gaussian Processes.
+
+Lastly, I've been looking at hyperparameter recovery, but not $\eta$ (aka $\beta$). I doubt the model did very well recovering the actual values, but are they at least in 95% interval 95% of the time?
+
+```{r}
+extract(single_fit, pars="eta")$eta %>% as_tibble() %>%
+  mutate(iterations=seq.int(nrow(.))) %>%
+  gather(time, value, -iterations) %>% mutate(time=as.numeric(substr(time,2,6))) %>% 
+  group_by(time) %>% summarize(min=quantile(value, 0.05),
+                               low=quantile(value, 0.16),
+                               mid=median(value),
+                               high=quantile(value, 0.84),
+                               max=quantile(value, 0.95)) %>%
+  mutate(actual=fake_data$eta) %>%
+  ggplot(aes(x=time)) + geom_ribbon(aes(ymin=min, ymax=max), fill="salmon") +
+    geom_ribbon(aes(ymin=low, ymax=high), fill="red") +
+    geom_line(aes(y=mid), colour="red4") + geom_line(aes(y=actual), alpha=0.5) + 
+    labs(title=expression(eta),
+         caption="Salmon is 2SD, Red is 1SD, white is the median, real values are black")
+```
+Wow, that's nuts. Wanna bet if we'll be this accurate with real data? $\alpha$ prior should be much higher than my pick for the simulated data. Which reminds me, we need a constant in the exogenous factors.
+
+On to the multiple X, multiple Y validation.

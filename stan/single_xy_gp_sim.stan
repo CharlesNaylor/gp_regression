@@ -35,13 +35,5 @@ parameters {
   vector[N] y;
 }
 model {
-  matrix[N, N] K = cov_exp_quad(time, alpha, rho);
-  matrix[N, N] L_K;
-  //perturb diagonal elements
-  for (n in 1:N) 
-    K[n, n] = K[n, n] + delta;
-  L_K = cholesky_decompose(K);
-    
-  eta ~ multi_normal_cholesky(mu, K);
   y ~ normal(eta .* x, sigma);
 }

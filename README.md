@@ -10,9 +10,9 @@ You can find comments and reasoning in a set of notebooks in the /doc directory.
 
   1.  [Gathering Data](https://cdn.rawgit.com/billWalker/gp_regression/f34154e9/doc/Gathering_Data.html): Initial raw data retrieval and cleanup.
   2.  [Calculating Factors](https://cdn.rawgit.com/billWalker/gp_regression/9a06ddfa/doc/Calculating_Factors.html): Turning raw data into normalized factors.
-  3.  [Specifying the Model - Single Y](https://rawgit.com/billWalker/gp_regression/master/doc/Specifying_the_Model-Single_Y.html)
-  3.  [Specifying the Model - Full Model](https://cdn.rawgit.com/billWalker/gp_regression/9a06ddfa/doc/Specifying_the_Model-Full_Model.html)
-  4.  [Model Validation]
+  3.  [Model Overview and Simple Implementation](https://rawgit.com/billWalker/gp_regression/doc/Specifying%20the%20Model-Overview%20and%20Simplest%20Implementation.html)
+  4.  [Model Validation - Single X, Multiple Y]
+  4.  [Model Validation - Full Model]
   5.  [Forecasting]
   6.  [Model Comparison]
 
@@ -20,7 +20,7 @@ You can find comments and reasoning in a set of notebooks in the /doc directory.
 
 The Kalman filter, especially in later iterations such as the Unscented Kalman Filter or Van Der Merwe's Sigma Point Kalman filter, provides a powerful and computationally efficient method of tracking the movement of an endogenous time series given a set of correlated, but error-prone, exogenous time series. As it has a closed form solution, and operates under the Markovian assumption that D_t \perp D_{t-(2...\infty)} | D_{t-1}, i.e. that all information about the past is encapsulated in the last observation, it is particularly suitable for use in a production environment. 
 
-However, in order to achieve this efficiency, the Kalman filter throws away anything we might learn about the nature of past intertemporal relationships, and presumes Gaussian distributions for all variables. Advances on the original filter relax the Gaussian assumption, but not the Markovian one.
+However, in order to achieve this efficiency, the Kalman filter throws away anything we might learn about the nature of past intertemporal relationships, beyond what we can see in the means and covariance matrices for all variables. It also presumes Gaussian distributions. Advances on the original filter relax the Gaussian assumption, but not the Markovian one.
 
 With a Gaussian process (GP), we can assume that parameters are related to one another in time via an arbitrary function. The disadvantage in comparison to Kalman filters is that we will wind up inverting a matrix of size T, where T is the total number of time periods in which we are interested, in order to calculate parameter values. GPs are also not necessarily solvable, and so we must rely on MCMC or its variants to evaluate the posterior distribution.
 

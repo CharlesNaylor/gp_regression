@@ -147,9 +147,14 @@ $(document).ready(function () {
  \end{matrix}
 \]</span></p>
 <p><span class="math display">\[
-\Sigma_\beta = \Omega'\tau\Omega \\
-\Omega \sim LJKCorr(3) \\
-\tau \sim cauchy(3), \tau &gt; 0
+\Sigma_\beta = \Omega_\beta'\tau\Omega_\beta \\
+\Omega_\beta \sim LJKCorr(3) \\
+\tau_d \sim cauchy(3), \tau_d &gt; 0
+\]</span></p>
+<p><span class="math display">\[
+\Sigma_y = \Omega_y'\sigma\Omega_y \\
+\Omega_y \sim LJKCorr(3) \\
+\sigma_a \sim cauchy(3), \sigma_a &gt; 0
 \]</span></p>
 <p>In plain English:</p>
 <ol style="list-style-type: decimal">
@@ -158,6 +163,7 @@ $(document).ready(function () {
 <li><p>Each <span class="math inline">\(\Sigma_{N, d}\)</span> is a Gaussian process, in which the degree of similarities between elements varies according to their squared Euclidian distance from one another (cf. Stan Reference Manual 2.17.0, pp.246-247). As the length of each measurement period is constant, the distance between row <span class="math inline">\(i\)</span> and row <span class="math inline">\(j\)</span> is simply the difference between <span class="math inline">\(i\)</span> and <span class="math inline">\(j\)</span>.</p></li>
 <li><p><span class="math inline">\(\rho\)</span> and <span class="math inline">\(\alpha\)</span> are parameters defining the speed at which <span class="math inline">\(\Sigma_{N,\beta}\)</span> terms become unrelated to each other. <span class="math inline">\(\delta\)</span> is the scale of the noise term in the regression, and guarantees a positive-definite matrix. Betas are not independent of each other, but their parameters <span class="math inline">\(\alpha\)</span> and <span class="math inline">\(\rho\)</span> <em>are</em>.</p></li>
 <li><p><span class="math inline">\(\Sigma_\beta\)</span> is the covariance matrix between betas. My exogenous variables are correlated. For example, I have both the relative level of 2Y rates, and the relative level of <em>changes</em> in 2Y rates. We account for this with two additional parameters, <span class="math inline">\(\Omega\)</span>, representing the correlation, and <span class="math inline">\(\tau\)</span>, representing the variance. <span class="math inline">\(\tau\)</span> is going to interact with $_{N, } as a whole, so we’ll need to do some testing to decide what the prior distribution should look like. The ratio between the two is going to determine whether covariation or variation over time dominate, and we want the variation over time to be more important. I’m putting a half-cauchy distribution in for now, as that’s the prior the mc-stan guys recommend, and it is weighted closer to 0 than, say, the Gaussian distribution.</p></li>
+<li><p>Similarly, <span class="math inline">\(\Sigma_y\)</span> is the covariance matrix between endogenous variables, indexed as <span class="math inline">\(a\)</span>.</p></li>
 </ol>
 <p>We are going to start with a single asset, single beta parameter implementation of that model. Here, <span class="math inline">\(\beta\)</span> becomes just multivariate-normal with respect to time, and <code>y</code> becomes normally distributed.</p>
 </div>
@@ -268,14 +274,6 @@ options(mc.cores = parallel::detectCores())</code></pre>
 ##   vector[N] y;
 ## }
 ## model {
-##   matrix[N, N] K = cov_exp_quad(time, alpha, rho);
-##   matrix[N, N] L_K;
-##   //perturb diagonal elements
-##   for (n in 1:N) 
-##     K[n, n] = K[n, n] + delta;
-##   L_K = cholesky_decompose(K);
-##     
-##   eta ~ multi_normal_cholesky(mu, K);
 ##   y ~ normal(eta .* x, sigma);
 ## }</code></pre>
 <p>The body of the model is the same as the fitting version, except I’ve moved the parameters into data, and <code>y</code> into parameters.</p>
