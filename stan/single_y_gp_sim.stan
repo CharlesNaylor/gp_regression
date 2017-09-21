@@ -1,4 +1,4 @@
-// multi-dimensional input latent variable GP with single y
+// multi-dimensional input latent variable GP with single x, single y
 // cf. manual 2.17.0, pp 253-254, 
 // Gaussian Processes for Machine Learning, pp 119-122
 functions {
@@ -17,6 +17,8 @@ functions {
       K[n,n] = K[n,n] + 1e-9;
     L_K = cholesky_decompose(K);
     
+    //We need a matrix-variate normal distribution,
+    //which Stan does not implement.
     L_Omega = cholesky_decompose(Omega);
     return multi_normal_cholesky_rng(rep_vector(0,N), L_K);
   }

@@ -4,4 +4,5 @@
 .Ruserdata
 data/proprietary/*
 20170404*
-.swp
+*.swp
+*.nb.html
