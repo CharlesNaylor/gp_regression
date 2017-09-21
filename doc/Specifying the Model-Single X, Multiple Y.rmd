@@ -201,7 +201,7 @@ extract(single_fit, pars="eta")$eta %>% as_tibble() %>%
   mutate(actual=fake_data$eta) %>%
   ggplot(aes(x=time)) + geom_ribbon(aes(ymin=min, ymax=max), fill="salmon") +
     geom_ribbon(aes(ymin=low, ymax=high), fill="red") +
-    geom_line(aes(y=mid), colour="red4") + geom_line(aes(y=actual), alpha=0.5) + 
+    geom_line(aes(y=mid), colour="white") + geom_line(aes(y=actual), alpha=0.5) + 
     labs(title=expression(eta),
          caption="Salmon is 2SD, Red is 1SD, white is the median, real values are black")
 ```
