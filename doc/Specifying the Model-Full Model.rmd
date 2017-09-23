@@ -121,6 +121,6 @@ Same drill as before.
 ```{r recover_params, eval=F}
 gp_model <- stan_model(file="../stan/gp.stan", model_name='gp')
 fake_data <- within(fake_data, {y<-apply(sim_y,c(2,3),median)})
-gp_fit <- sampling(gp_model, fake_data[c("N","A","B","y","x","y_cov","sim")], chains=1)
+gp_fit <- sampling(gp_model, fake_data[c("N","A","B","y","x","y_cov","sim")], chains=3, cores=3) #This one will take a while, and I only have 4 physical cores on this machine.
 ```
 

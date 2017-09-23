@@ -252,6 +252,11 @@ yc_z %>% ggplot(aes(x=Date,y=value)) + facet_wrap(~asset) +
 
 Spikey. I'd be more concerned about those initial values if I didn't know we were starting in 2008 at this point.
 
+```{r}
+exogs <- bind_rows(exogs, yc_z %>% mutate(Date=as.Date(Date)))
+rm(yc_z)
+```
+
 ## Carry Return (endogenous variable)
 
 Now for the tricky one. We need the weekly change in spot rates after the forward points have been taken into consideration, and adjusting to weekly periodicity rather than monthly. It'll be easier to reduce the implied monthly rates rather than use the forward points directly.
