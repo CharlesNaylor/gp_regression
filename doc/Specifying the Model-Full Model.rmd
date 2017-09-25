@@ -123,4 +123,13 @@ gp_model <- stan_model(file="../stan/gp.stan", model_name='gp')
 fake_data <- within(fake_data, {y<-apply(sim_y,c(2,3),median)})
 gp_fit <- sampling(gp_model, fake_data[c("N","A","B","y","x","y_cov","sim")], chains=3, cores=3) #This one will take a while, and I only have 4 physical cores on this machine.
 ```
+That took 5 hours on my laptop. We had 3 exogs and 2 endos. The full model has 5 exogs and 11 assets.
+Now, did it work?
+
+```{r}
+stopifnot(require(bayesplot))
+mcmc_trace(as.array(single_fit), pars=c("alpha[1]", "rho[2]", "L_omega[2,1]", 
+                                        "L_omega[3,2]", "L_omega[3,1]",
+                                            "sigma[2]"))
+```
 
