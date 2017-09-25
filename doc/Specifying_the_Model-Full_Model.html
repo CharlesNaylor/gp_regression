@@ -285,17 +285,17 @@ gp_fit &lt;- sampling(gp_model, fake_data[c(&quot;N&quot;,&quot;A&quot;,&quot;B&
 mcmc_trace(as.array(gp_fit), pars=c(&quot;alpha[1]&quot;, &quot;length_scale[2]&quot;, &quot;L_omega[2,1]&quot;, 
                                         &quot;L_omega[3,2]&quot;, &quot;L_omega[3,1]&quot;,
                                             &quot;sigma[2]&quot;))</code></pre>
-<img src=doc/full_model_imgs/stuck_chain.png alt="Saved image of trace graphs with a stuck chain">
+<img src=full_model_imgs/stuck_chain.png alt="Saved image of trace graphs with a stuck chain">
 <p>That’s not good. Looks like we have a stuck chain. Also, poor mixing on sigma and alpha. I might try again with a different random seed. First let’s take a better look at parameter recovery.</p>
 <pre class="r"><code>index_it &lt;- function(x,i) {paste0(x,&quot;[&quot;,i,&quot;]&quot;)}
 gp_fit_array &lt;- as.array(gp_fit)
 mcmc_recover_intervals(gp_fit_array[,,grep(&quot;(alpha|length_scale|sigma)&quot;, dimnames(gp_fit_array)$parameters)],
                              true=with(fake_data,c(alpha,sigma,length_scale))) + coord_flip()</code></pre>
-<img src=doc/full_model_imgs/stuck_intervals.png alt="Saved image of mcmc intervals with a stuck chain">
+<img src=full_model_imgs/stuck_intervals.png alt="Saved image of mcmc intervals with a stuck chain">
 <p>Not too bad, but the stuck chain is pretty visible. Let’s look at histograms.</p>
 <pre class="r"><code>mcmc_recover_hist(gp_fit_array[,,grep(&quot;(alpha|length_scale|sigma)&quot;, dimnames(gp_fit_array)$parameters)],
                              true=with(fake_data,c(alpha,sigma,length_scale)))</code></pre>
-<img src=doc/full_model_imgs/stuck_histogram.png alt="Saved image of mcmc posterior with a stuck chain">
+<img src=full_model_imgs/stuck_histogram.png alt="Saved image of mcmc posterior with a stuck chain">
 <p>Ok, time to try fitting a second time. I’m going to change the random seed, throw another chain on there, and add 1000 iterations.</p>
 <pre class="r"><code>gp_fit &lt;- sampling(gp_model, fake_data[c(&quot;N&quot;,&quot;A&quot;,&quot;B&quot;,&quot;y&quot;,&quot;x&quot;,&quot;y_cov&quot;,&quot;sim&quot;)], 
                    chains=4, cores=4, iter=3000, seed=9178675309)</code></pre>
