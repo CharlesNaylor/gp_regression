@@ -10,10 +10,10 @@ You can find comments and reasoning in a set of notebooks in the /doc directory.
 
   1.  [Gathering Data](https://cdn.rawgit.com/billWalker/gp_regression/f34154e9/doc/Gathering_Data.html): Initial raw data retrieval and cleanup.
   2.  [Calculating Factors](https://cdn.rawgit.com/billWalker/gp_regression/9a06ddfa/doc/Calculating_Factors.html): Turning raw data into normalized factors.
-  3.  [Model Overview and Simple Implementation](https://cdn.rawgit.com/billWalker/gp_regression/edac7693/doc/Specifying_the_Model-Overview_and_Simplest_Implementation.html)
-  4.  [Model Validation - Single X, Multiple Y](https://cdn.rawgit.com/billWalker/gp_regression/edac7693/doc/Specifying_the_Model-Single_X%2C_Multiple_Y.html)
-  4.  [Model Validation - Full Model]
-  5.  [Forecasting]
+  3.  [Model Overview and Simple Implementation](https://cdn.rawgit.com/billWalker/gp_regression/edac7693/doc/Specifying_the_Model-Overview_and_Simplest_Implementation.html) State the full model, then start by validating with a single factor, single asset version using known parameters.
+  4.  [Model Validation - Single X, Multiple Y](https://cdn.rawgit.com/billWalker/gp_regression/edac7693/doc/Specifying_the_Model-Single_X%2C_Multiple_Y.html) Validate a single factor, multiple asset version using known parameters.
+  4.  [Model Validation - Full Model](https://cdn.rawgit.com/billWalker/gp_regression/24a4b0cb/doc/Specifying_the_Model-Full_Model.html) Validate the full multi-factor, multi-asset version using known parameters.
+  5.  [Forecasting] Run the model using the actual data, and backtest.
   6.  [Model Comparison]
 
 ## Details
