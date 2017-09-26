@@ -1,6 +1,10 @@
 ---
 title: "Specifying the Model - Full Model"
-output: html_notebook
+output:
+  html_document:
+    toc: yes
+  html_notebook:
+    toc: yes
 ---
 
 Now let's specify and test the full model, with multiple inputs and multiple outputs.
@@ -63,9 +67,14 @@ cat(read_file("../stan/gp.stan"))
 This is substantially different from the code for single asset, because I wanted to avoid making mistakes in vectorizing over two different dimensions (both exogs and endos). This format is much more readable. Also note I'm specifying a fixed endogenous covariance, rather than estimating. This is to reduce parameters. You could plug GARCH in here directly, or fit a GARCH model separately and provide that. I would be inclined to stick in plain EWMA (exponentially weighted moving average) endogenous covariance, as I've not seen much improvement when using GARCH in these macro FX models in the past. For now, let's do our fake data simulation and parameter recovery test with the constant endogenous covariance matrix.
 
 # Generating Fake Data
+```{r load_premade_data, include=FALSE}
+#as before, load data I saved earlier so I don't have to wait for the fits
+# to run every time I knit this to HTML.
+load("../data/specifying_the_model-full_model-full.rData")
+```
 
 Betas and beta correlation will be generated using Stan functions, like last time.
-```{r compile_sim_model}
+```{r compile_sim_model, eval=F}
 sim_model <- stan_model(model_name="sim_full", file="../stan/gp_sim.stan")
 ```
 
@@ -123,13 +132,68 @@ gp_model <- stan_model(file="../stan/gp.stan", model_name='gp')
 fake_data <- within(fake_data, {y<-apply(sim_y,c(2,3),median)})
 gp_fit <- sampling(gp_model, fake_data[c("N","A","B","y","x","y_cov","sim")], chains=3, cores=3) #This one will take a while, and I only have 4 physical cores on this machine.
 ```
-That took 5 hours on my laptop. We had 3 exogs and 2 endos. The full model has 5 exogs and 11 assets.
+That took 5 hours on my laptop. We had 3 exogs and 2 endos. The full model has 5 exogs and 11 assets. However, it only took 1.2 hours on the VM Syracuse has provided me! So I've got that going for me.
+
 Now, did it work?
 
-```{r}
+```{r stuck_chain, eval=F}
 stopifnot(require(bayesplot))
-mcmc_trace(as.array(single_fit), pars=c("alpha[1]", "rho[2]", "L_omega[2,1]", 
+mcmc_trace(as.array(gp_fit), pars=c("alpha[1]", "length_scale[2]", "L_omega[2,1]", 
                                         "L_omega[3,2]", "L_omega[3,1]",
                                             "sigma[2]"))
 ```
 
+That's not good. Looks like we have a stuck chain. Also, poor mixing on sigma and alpha. I might try again with a different random seed. First let's take a better look at parameter recovery.
+
+```{r stuck_intervals, eval=F}
+index_it <- function(x,i) {paste0(x,"[",i,"]")}
+gp_fit_array <- as.array(gp_fit)
+mcmc_recover_intervals(gp_fit_array[,,grep("(alpha|length_scale|sigma)", dimnames(gp_fit_array)$parameters)],
+                             true=with(fake_data,c(alpha,sigma,length_scale))) + coord_flip()
+```
+Not too bad, but the stuck chain is pretty visible. Let's look at histograms.
+
+```{r stuck_hist, eval=F}
+mcmc_recover_hist(gp_fit_array[,,grep("(alpha|length_scale|sigma)", dimnames(gp_fit_array)$parameters)],
+                             true=with(fake_data,c(alpha,sigma,length_scale)))
+```
+
+Ok, time to try fitting a second time. I'm going to change the random seed, throw another chain on there, and add 1000 iterations. 
+
+```{r, eval=F}
+gp_fit <- sampling(gp_model, fake_data[c("N","A","B","y","x","y_cov","sim")], 
+                   chains=4, cores=4, iter=3000, seed=9178675309)
+```
+
+2.2 hours. Not bad. Looks like my seed was too big though. Shouldn't give Jenny an area code.
+
+```{r hist}
+stopifnot(require(bayesplot))
+gp_fit_array <- as.array(gp_fit)
+mcmc_recover_hist(gp_fit_array[,,grep("(alpha|length_scale|sigma)", dimnames(gp_fit_array)$parameters)],
+                             true=with(fake_data,c(alpha,sigma,length_scale)))
+```
+That's better. Well-mixed?
+
+```{r mix_check}
+mcmc_trace(as.array(gp_fit), pars=c("alpha[1]", "length_scale[2]", "L_omega[2,1]", 
+                                        "L_omega[3,2]", "L_omega[3,1]",
+                                            "sigma[2]"))
+```
+
+Ug. Might need more like 5000 to get everything mixed properly. Let's see how good the optimizer is. This will do MAP instead of generative modeling.
+
+```{r}
+gp_optim <- optimizing(gp_model, fake_data[c("N","A","B","y","x","y_cov","sim")], 
+                  iter=5000, algorithm="BFGS")
+```
+```{r}
+data.frame(par_hat=gp_optim$par[grep("(alpha|length_scale|sigma)", names(gp_optim$par))],
+           par=with(fake_data,c(alpha,sigma,length_scale)))
+```
+
+Pretty far off. I've tried tweaking a few parameters around this, but it looks like optimization just may not work for this model. Lord knows the posterior is going to be multimodal on this.
+
+This means the backtest is going to require a lot of hardware.
+
+Next up, real data.
