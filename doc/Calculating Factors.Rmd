@@ -253,9 +253,17 @@ yc_z %>% ggplot(aes(x=Date,y=value)) + facet_wrap(~asset) +
 Spikey. I'd be more concerned about those initial values if I didn't know we were starting in 2008 at this point.
 
 ```{r}
-exogs <- bind_rows(exogs, yc_z %>% mutate(Date=as.Date(Date)))
+exogs <- bind_rows(exogs, yc_z %>% mutate(Date=as.Date(Date),
+                   exog="yc_z"))
 rm(yc_z)
 ```
+
+##Review Exogs
+
+```{r}
+exogs %>% ggplot(aes(x=Date,y=value)) + facet_grid(asset~exog) + geom_line()
+```
+Right, no scaling on carry.  I'll probably multiply by a constant when I put carry in the model so that I don't need a separate prior on $\sigma_{carry}$.
 
 ## Carry Return (endogenous variable)
 
@@ -319,7 +327,7 @@ Looks about right. The Yen in 2016 is a good tell-tale, as is the Euro in 2014 f
 
 Ok, clean up and save transformed data. We don't need to worry about proprietary data anymore since the factors represent substantial changes to the raw form.
 
-```{r cleanup}
+```{r cleanup, eval=F}
 rm(list=ls()[-grep("endo|exogs",ls())])
 save.image("../data/calculating_factors.rData")
 ```
