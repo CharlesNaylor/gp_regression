@@ -1,0 +1,193 @@
+---
+title: "Forecasting"
+output:
+  html_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+---
+
+#Forecasting
+
+At long last, we're ready to look at the actual data. I also need to add a constant into the regression.
+
+```{r setup}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(tidyverse)
+library(lubridate)
+library(rstan) #2.17 hasn't been released yet for rstan, but we'll be using cmdstan 2.17.
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+```
+
+To backtest (or cross-validate, depending on how you came by your statistical knowledge), we will be running the model on segments of the data with the expectation that we will predict one period into the future. We can generate the full posterior distribution of the forecast by adding a generated data section to the model, and passing an additional matrix of exog values for the latest date.
+
+Here is the full GP model with added hooks for forecasting:
+```{r gp_forecast_model_cat}
+cat(read_file("../stan/gp_forecast.stan"))
+```
+
+#Exogs
+
+Let's review the data
+```{r load_data, fig.height=10, fig.width=16.1}
+load("../data/calculating_factors.rData")
+
+bind_rows(exogs, endo %>% rename(value=endo) %>% 
+            select(Date,asset,value) %>%
+            mutate(exog="endo")) %>% 
+  ggplot(aes(x=Date,y=value)) + geom_line() + facet_grid(asset~exog)
+```
+
+Right, so I decided not to scale carry on a rolling Z-score, as I did with everything else. Have I subtracted USD carry from that yet, at least?
+```{r graph_carry}
+exogs %>% filter(exog=="carry") %>% 
+  ggplot(aes(x=Date, y=value)) + facet_wrap(~asset, ncol=3) + 
+    geom_line() + ggtitle("Carry values")
+```
+
+Yes. What are the ranges of the different series?
+```{r}
+exogs %>% group_by(exog) %>% summarize(high=quantile(value, 0.95, na.rm=T),
+                                       low=quantile(value, 0.05, na.rm=T))
+```
+
+So multiplying by 25 will get us roughly scaled, but not centered. That's fine, as I want to preserve the meaning of zero as it relates to interest rate differentials.
+
+We need to do 4 things:
+  * Scale carry
+  * add a constant term
+  * reshape the tidy data into the 3d array the Stan code expects.
+  * filter down to the largest contiguous data set.
+
+I'll reshape last so we use tidy methods to do nearly everything. 
+
+## Add Constant, Scale Carry, filter down
+
+Note that if we had some kind of multivariate prior on the X values, the constant would cause our $\Sigma_x$ to be non-positive definite.
+
+On the scaling, I'm informed by the data I will be using to fit the model, but I feel ok with this since my scalar happens to wind up being a round number.
+```{r modify_exogs, fig.height=10, fig.width=16.1}
+exogs <- bind_rows(exogs %>% mutate(value=ifelse(exog=="carry",value*25,value)),
+                   exogs %>% filter(exog=="carry") %>%
+                     mutate(exog="constant",
+                            value=1)) %>%
+         group_by(asset, exog) %>% arrange(Date) %>% fill(value) %>% ungroup() %>%
+         filter(Date >= ymd(20080101) & Date <= ymd(20170825) & wday(Date) == 6) %>%
+         filter(!(asset=="USD"))
+
+exogs %>% ggplot(aes(x=Date, y=value)) + facet_grid(asset~exog) + geom_line() + ylim(-4,4)
+```
+
+## Reshape
+
+As before, Mr. Wickham has abandoned any functions handling higher-dimensional arrays, but he wrote the definitive package for handling them before.
+```{r untidy_exogs}
+library(reshape2)
+exogs <- acast(exogs, Date~asset~exog)
+```
+
+# Endos
+
+How do these look?
+```{r look_at_endos}
+endo %>% ggplot(aes(x=Date,y=endo)) + facet_wrap(~asset, ncol=3) + geom_line()
+```
+Fine.
+
+I need to lag by a week since we are forecasting. Never forget this step, or you will get very excited, then very disappointed, by your new strategy. I'm actually going to lead by a week, so the endo for this week matches against exogs from last week. Lag exogs, or lead endos. Then remember which one you did when you put it in production and have to automate updating data.
+
+We also need to put endo into an NxA matrix instead of long-form.
+
+```{r lag_endo}
+endo <- endo %>% group_by(asset) %>% 
+          mutate(lead_endo=lead(endo, order_by=Date)) %>%
+          select(-spd,-carry,-endo) %>%
+          ungroup() %>%
+          spread(asset,lead_endo)
+
+endo %>% glimpse()
+```
+
+# Additional Parameters - $\Sigma_y$
+
+We will also need to provide the covariance estimate for Y. As discussed before, I'm assuming that we have a separate forecast for endogenous covariance. In these notebooks I'll just use the exponentially weighted observed covariance, and repeat the most recently available data for the new periods.
+
+```{r y_cov}
+FIRST_DATA_SET <- 52 #Start the forecast after we have at least 52 weeks of data
+N1 <- nrow(exogs) - 1 - FIRST_DATA_SET
+N2 <- 1 # # of extra periods
+A <- ncol(endo)-1
+
+y_cov <- array(NA, dim=c(N1+N2, A, A), 
+               dimnames=list(Date=dimnames(exogs)[[1]][(FIRST_DATA_SET+1):dim(exogs)[1]], dimnames(exogs)[[2]], dimnames(exogs)[[2]]))
+y_offset <- which(as.Date(rownames(y_cov)[1]) == endo$Date) - 1
+
+lambda <- exp(log(0.5)/52) # 1Y half-life exponential decay
+wts <- lambda ^ (seq.int(0, y_offset+N1+N2))
+for(n in 1:nrow(y_cov)) {
+  ind <- seq.int(y_offset+n-1) #extra -1 in the index because we are lagging these an extra step
+  y_cov[n,,] <- cov.wt(endo[ind,-1],rev(wts[ind]), center=F)$cov  
+}
+```
+
+# Test
+
+
+## On backtesting and processing power
+If we run the model on the entire data history at each period, the amount of processing time necessary to forecast the model will grow quadratically, as we will need to forecast on a symmetric matrix of growing dimension. This might be ok, and it's certainly what I would prefer to do. We want to learn from 2008, and if we forecast on a rolling window, we are losing much of the appeal of using a Gaussian Process over a Kalman Filter or Hidden Markov Model. Advances in Stan to permit using GPUs and the open MPI standard should make it possible to throw arbitrarily large amounts of processing power at the problem, whereas in the current formulation we are limited by the clock speed of a maximum of 4 processors. Alternatively, as I've mentioned before, we could abandon generative modeling and use TensorFlow or some other system which already permits parallelization. 
+
+Let's see how long the system takes for just the first year.
+```{r secret_load, message=FALSE, warning=FALSE, include=FALSE}
+load("../data/forecasting-full.rData")
+```
+
+
+```{r, eval=F}
+N1 <- 52
+gp_fit <- stan(file="../stan/gp_forecast.stan", model_name="gp_forecast",
+               data=list(N1=N1, N2=N2, A=A, B=dim(exogs)[3], 
+                         y=na.omit(endo[(1+y_offset):(y_offset+N1),-1]),
+                         x=aperm(exogs[(1+FIRST_DATA_SET):(FIRST_DATA_SET+N1+N2),,],c(1,3,2)),
+                         y_cov=y_cov[1:(N1+N2),,]), chains=4, iter=2000)
+```
+Run time 45 minutes, and that's the fewest parameters we're going to get. However if the chains are mixing well we can probably do substantially fewer than 2000 iterations.
+
+```{r check_fit}
+require(bayesplot)
+mcmc_trace(as.array(gp_fit), pars=c("alpha[1]", "sigma[2]", "length_scale[3]", "L_omega[2,1]"))
+
+```
+
+Those look good. Let's look at some of the betas.
+
+```{r check_fit2}
+mcmc_trace(as.array(gp_fit), pars=paste0("beta[",c(2,5,25,50),",",1:4,"]"))
+```
+
+How about the beta correlation matrix?
+```{r check_fit3}
+mcmc_trace(as.array(gp_fit), pars=paste0("L_omega[",c(2,3,2,3,3),",",c(1,1,2,2,3),"]"))
+```
+
+Good. I could probably get away with 100 iterations, but let's do 500 to be safe.
+
+How do the posterior predictions look? I'm anticipating a pretty wide scale around zero.
+
+```{r posterior_pred}
+mcmc_recover_hist(as.array(gp_fit)[,,paste0("new_y[",N2,",",1:A,"]")],
+                  true=as.numeric(endo[N1+1,-1]))
+```
+
+Yup. This reflects the low signal-to-noise of the data. The good news is the values are all reasonable. 
+
+# On Currency Forecasting in General
+
+The true model for returns in any asset class is the carry, which we know ahead of time, plus the 
+price movements, which are the deterministic result of countless iterative, interacting agents. While we may know many of these agents' motives, because the actions of each agent are affected by those of all of the other agents, it is not possible to aggregate their behavior with any accuracy. It is impossible to tell, for example, the periodicity of market data. A day's worth of price movements at 5-minute increments looks the same as a year's worth of daily movements. The asset price measures the result of a chaotic, nonlinear dynamical system.
+
+So why bother? What I have given you is the reason I believe no amount of layers of neural nets---or of any other algorithm which takes as an assumption that the data is stochastic---will be able to accurately predict market movements on any human timescale.  However, we know that for currencies, interest rate expectations and other fundamental factors impact the decision-making of the agents I described above. The hope is that, over time, the small differences between predicted means, plus better-than-nothing modeling of the relationships between these factors, and between the means will give the investor an edge in harvesting the carry over a portfolio of currencies.
+
+
+# Next up: Backtesting
