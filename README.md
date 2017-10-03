@@ -17,6 +17,12 @@ You can find comments and reasoning in a set of notebooks in the /doc directory.
   6.  [Backtesting] Test all historical weeks using a processor cluster
   7.  [Conclusions]
 
+## On Currency Forecasting in General
+
+The true model for returns in any asset class is the combination of carry and price movements. In FX, the carry is relatively stable but subject to punctuated equilibrium as new data comes to light. In developed markets, this data primarily consists of central bank rate decisions and economic data that might affect those decisions. Price movements, however, are the deterministic result of countless iterative, interacting agents. While we may know many of these agents' motives, it is not possible to aggregate their behavior with any accuracy, because the actions of each agent are affected by those of all of the other agents, and small measurement errors compound. It is impossible to tell, for example, the periodicity of market data. A day's worth of price movements at 5-minute increments looks the same as a year's worth of daily movements. The asset price measures the result of a chaotic, nonlinear dynamical system.
+
+So why bother? What I have given you is the reason I believe no amount of layers of neural nets---or of any other algorithm which takes as an assumption that the data is stochastic---will be able to accurately predict market movements on any human timescale.  However, we know that for currencies, interest rate expectations (i.e., forecasts of carry) and other fundamental factors impact the decision-making of the agents I described above. The hope is that, over time, the small differences between predicted means, plus better-than-nothing modeling of the relationships between these factors, and the relationships between the predictions, will add up. The investor will have an edge in harvesting the carry over a portfolio of currencies, whilst weathering idiosyncratic price movements.
+
 ## Details
 
 The Kalman filter, especially in later iterations such as the Unscented Kalman Filter or Van Der Merwe's Sigma Point Kalman filter, provides a powerful and computationally efficient method of tracking the movement of an endogenous time series given a set of correlated, but error-prone, exogenous time series. As it has a closed form solution, and operates under the Markovian assumption that D_t \perp D_{t-(2...\infty)} | D_{t-1}, i.e. that all information about the past is encapsulated in the last observation, it is particularly suitable for use in a production environment. 
