@@ -135,9 +135,10 @@ for(n in 1:nrow(y_cov)) {
 # Test
 
 
-## On backtesting and processing power
+## Backtesting and Processing Power
 If we run the model on the entire data history at each period, the amount of processing time necessary to forecast the model will grow quadratically, as we will need to forecast on a symmetric matrix of growing dimension. This might be ok, and it's certainly what I would prefer to do. We want to learn from 2008, and if we forecast on a rolling window, we are losing much of the appeal of using a Gaussian Process over a Kalman Filter or Hidden Markov Model. Advances in Stan to permit using GPUs and the open MPI standard should make it possible to throw arbitrarily large amounts of processing power at the problem, whereas in the current formulation we are limited by the clock speed of a maximum of 4 processors. Alternatively, as I've mentioned before, we could abandon generative modeling and use TensorFlow or some other system which already permits parallelization. 
 
+## Testing
 Let's see how long the system takes for just the first year.
 ```{r secret_load, message=FALSE, warning=FALSE, include=FALSE}
 load("../data/forecasting-full.rData")
@@ -166,6 +167,13 @@ Those look good. Let's look at some of the betas.
 mcmc_trace(as.array(gp_fit), pars=paste0("beta[",c(2,5,25,50),",",1:4,"]"))
 ```
 
+These are mixing well, but note the scale. 
+
+## Parameter Scaling
+Ideally, we want all fitted parameters on a unit scale. Stan will slow down when the best values for parameters are far away from that size, and functions especially poorly when some parameters are of scales orders of magnitude away from others. We could specify a smaller default stepsize to help with the betas, but then the model will have trouble converging on larger parameters, like `length_scale`. The solution is to scale down the exogenous factors, X, so that betas will be estimated on a comparable scale to the other parameters. For ease of use, I will do this in the model itself. That way, we won't have to remember to scale in a separate step in production. An alternate solution would be to increase the size of both $y$ and $\Sigma_y$, but this is slightly easier, and will leave the forecast ys directly interpretable. As we are specifying $\Sigma_y$, we needn't worry that $y$ is no where near unit scale.
+
+## Back to Testing
+
 How about the beta correlation matrix?
 ```{r check_fit3}
 mcmc_trace(as.array(gp_fit), pars=paste0("L_omega[",c(2,3,2,3,3),",",c(1,1,2,2,3),"]"))
@@ -184,10 +192,14 @@ Yup. This reflects the low signal-to-noise of the data. The good news is the val
 
 # On Currency Forecasting in General
 
-The true model for returns in any asset class is the carry, which we know ahead of time, plus the 
-price movements, which are the deterministic result of countless iterative, interacting agents. While we may know many of these agents' motives, because the actions of each agent are affected by those of all of the other agents, it is not possible to aggregate their behavior with any accuracy. It is impossible to tell, for example, the periodicity of market data. A day's worth of price movements at 5-minute increments looks the same as a year's worth of daily movements. The asset price measures the result of a chaotic, nonlinear dynamical system.
+The true model for returns in any asset class is the combination of carry and price movements. In FX, the carry is relatively stable but subject to punctuated equilibrium as new data comes to light. In developed markets, this data primarily consists of central bank rate decisions and economic data that might affect those decisions. Price movements, however, are the deterministic result of countless iterative, interacting agents. While we may know many of these agents' motives, it is not possible to aggregate their behavior with any accuracy, because the actions of each agent are affected by those of all of the other agents, and small measurement errors compound. It is impossible to tell, for example, the periodicity of market data. A day's worth of price movements at 5-minute increments looks the same as a year's worth of daily movements. The asset price measures the result of a chaotic, nonlinear dynamical system.
 
-So why bother? What I have given you is the reason I believe no amount of layers of neural nets---or of any other algorithm which takes as an assumption that the data is stochastic---will be able to accurately predict market movements on any human timescale.  However, we know that for currencies, interest rate expectations and other fundamental factors impact the decision-making of the agents I described above. The hope is that, over time, the small differences between predicted means, plus better-than-nothing modeling of the relationships between these factors, and between the means will give the investor an edge in harvesting the carry over a portfolio of currencies.
-
+So why bother? What I have given you is the reason I believe no amount of layers of neural nets---or of any other algorithm which takes as an assumption that the data is stochastic---will be able to accurately predict market movements on any human timescale.  However, we know that for currencies, interest rate expectations (i.e., forecasts of carry) and other fundamental factors impact the decision-making of the agents I described above. The hope is that, over time, the small differences between predicted means, plus better-than-nothing modeling of the relationships between these factors, and the relationships between the predictions, will add up. The investor will have an edge in harvesting the carry over a portfolio of currencies, whilst weathering idiosyncratic price movements.
 
 # Next up: Backtesting
+
+Save the additional data manipulations.
+```{r save_data}
+save(y_cov,y_offset,N1,N2,A,exogs,endo,file="../data/forecasting.rData")
+```
+
