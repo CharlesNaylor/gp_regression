@@ -1,0 +1,36 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+</head>
+<body>
+<h1 id="gp-regression">GP Regression</h1>
+<h2 id="summary">Summary</h2>
+<p>This code will demonstrate the use of Gaussian processes in a dynamic linear regression, as a replacement for the Kalman Filter. More generally, Gaussian processes can be used in nonlinear regressions in which the relationship between xs and ys is assumed to vary smoothly with respect to the values of the xs. We will assume that the relationship varies smoothly with respect to time, but is static across values of xs within a given time. It's more usual to use Gaussian processes as a nonlinear regression technique, so that the relationship between x and y varies smoothly with respect to the values of xs, like a continuous version of random forest regressions.</p>
+<p>You can find comments and reasoning in a set of notebooks in the /doc directory.</p>
+<h2 id="process">Process</h2>
+<ol style="list-style-type: decimal">
+<li><a href="https://cdn.rawgit.com/billWalker/gp_regression/f34154e9/doc/Gathering_Data.html">Gathering Data</a>: Initial raw data retrieval and cleanup.</li>
+<li><a href="https://cdn.rawgit.com/billWalker/gp_regression/9a06ddfa/doc/Calculating_Factors.html">Calculating Factors</a>: Turning raw data into normalized factors.</li>
+<li><a href="https://cdn.rawgit.com/billWalker/gp_regression/edac7693/doc/Specifying_the_Model-Overview_and_Simplest_Implementation.html">Model Overview and Simple Implementation</a> State the full model, then start by validating with a single factor, single asset version using known parameters.</li>
+<li><a href="https://cdn.rawgit.com/billWalker/gp_regression/edac7693/doc/Specifying_the_Model-Single_X%2C_Multiple_Y.html">Model Validation - Single X, Multiple Y</a> Validate a single factor, multiple asset version using known parameters.</li>
+<li><a href="https://cdn.rawgit.com/billWalker/gp_regression/2297670c/doc/Specifying_the_Model-Full_Model.html">Model Validation - Full Model</a> Validate the full multi-factor, multi-asset version using known parameters.</li>
+<li><a href="https://rawgit.com/billWalker/gp_regression/master/doc/Forecasting.html">Forecasting</a> Test the model using the actual data.</li>
+<li>[Backtesting] Test all historical weeks using a processor cluster</li>
+<li>[Conclusions]</li>
+</ol>
+<h2 id="on-currency-forecasting-in-general">On Currency Forecasting in General</h2>
+<p>The true model for returns in any asset class is the combination of carry and price movements. In FX, the carry is relatively stable but subject to punctuated equilibrium as new data comes to light. In developed markets, this data primarily consists of central bank rate decisions and economic data that might affect those decisions. Price movements, however, are the deterministic result of countless iterative, interacting agents. While we may know many of these agents' motives, it is not possible to aggregate their behavior with any accuracy, because the actions of each agent are affected by those of all of the other agents, and small measurement errors compound. It is impossible to tell, for example, the periodicity of market data. A day's worth of price movements at 5-minute increments looks the same as a year's worth of daily movements. The asset price measures the result of a chaotic, nonlinear dynamical system.</p>
+<p>So why bother? What I have given you is the reason I believe no amount of layers of neural nets---or of any other algorithm which takes as an assumption that the data is stochastic---will be able to accurately predict market movements on any human timescale. However, we know that for currencies, interest rate expectations (i.e., forecasts of carry) and other fundamental factors impact the decision-making of the agents I described above. The hope is that, over time, the small differences between predicted means, plus better-than-nothing modeling of the relationships between these factors, and the relationships between the predictions, will add up. The investor will have an edge in harvesting the carry over a portfolio of currencies, whilst weathering idiosyncratic price movements.</p>
+<h2 id="details">Details</h2>
+<p>The Kalman filter, especially in later iterations such as the Unscented Kalman Filter or Van Der Merwe's Sigma Point Kalman filter, provides a powerful and computationally efficient method of tracking the movement of an endogenous time series given a set of correlated, but error-prone, exogenous time series. As it has a closed form solution, and operates under the Markovian assumption that D_t D_{t-(2...)} | D_{t-1}, i.e. that all information about the past is encapsulated in the last observation, it is particularly suitable for use in a production environment.</p>
+<p>However, in order to achieve this efficiency, the Kalman filter throws away anything we might learn about the nature of past intertemporal relationships, beyond what we can see in the means and covariance matrices for all variables. It also presumes Gaussian distributions. Advances on the original filter relax the Gaussian assumption, but not the Markovian one.</p>
+<p>With a Gaussian process (GP), we can assume that parameters are related to one another in time via an arbitrary function. The disadvantage in comparison to Kalman filters is that we will wind up inverting a matrix of size T, where T is the total number of time periods in which we are interested, in order to calculate parameter values. GPs are also not necessarily solvable, and so we must rely on MCMC or its variants to evaluate the posterior distribution.</p>
+<p>With advances in processing power, this is less of a problem than it used to be. An upcoming version of Stan is promising GPU-powered matrix inversion, and should really kick off the use of GPs in production.</p>
+<p>As a motivating example, I'm going to use a factor regression of macroeconomic and technical indicators to forecast returns to some major currency pairs. Exploratory analysis is done in R, and the model is written in Stan. A production model would be written in Python, but I don't know that we'll get that far here.</p>
+</body>
+</html>
