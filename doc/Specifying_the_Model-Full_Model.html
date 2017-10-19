@@ -148,94 +148,75 @@ $(document).ready(function () {
 <p><span class="math display">\[
 \Sigma_\beta = \Omega_\beta'\tau\Omega_\beta \\
 \Omega_\beta \sim LJKCorr(3) \\
-\tau_d \sim cauchy(3), \tau_d &gt; 0
+\tau \sim cauchy(0, 1), \tau &gt; 0
 \]</span></p>
 <p><span class="math display">\[
 \Sigma_y = \Omega_y'\sigma\Omega_y \\
-\Omega_y \sim LJKCorr(3) \\
-\sigma_a \sim cauchy(3), \sigma_a &gt; 0
+\Omega_y \sim LJKCorr(4) \\
+\sigma_a \sim cauchy(0, 1), \sigma_a &gt; 0
 \]</span></p>
 <p>As I mentioned in the last notebook, I think I’m not going to model <span class="math inline">\(\Sigma_y\)</span>, but instead specify the covariance matrix based on the exponentially-weighted historical values.</p>
 <p>The trickiest bit here is going to be specifying a matrix-variate distribution for <span class="math inline">\(\beta\)</span>. Stan does not have one built in<a href="#fn1" class="footnoteRef" id="fnref1"><sup>1</sup></a>, so I’m going to have to write a set of functions to use a multivariate normal distribution instead. <a href="https://en.wikipedia.org/wiki/Matrix_normal_distribution">Basically</a>, matrix-variate should be equivalent to a multivariate distribution in which the additional axis has been stacked vertically for <span class="math inline">\(\mu\)</span>, and the <span class="math inline">\(\Sigma\)</span> is the Kronecker product of <span class="math inline">\(\Sigma_{N}\)</span> and <span class="math inline">\(\Sigma_\beta\)</span>. This should be ringing bells for anybody familiar with Zellner’s <a href="https://en.wikipedia.org/wiki/Seemingly_unrelated_regressions">Seemingly Unrelated Regressions</a>, too. Unfortunately, Stan doesn’t implement the Kronecker product, either. If you go through the Stan discussion board and the old mailing list, the advice seems to be, “try hard not to need the full matrix created by the Kronecker product”. But I lack the math to implement matrix-normal efficiently in Stan. <a href="http://rpubs.com/mshvarts/matnorm-stan">Mike Shvartsman</a> gives the basis for an efficient, cholesky-based implementation of the <em>likelihood</em> for a matrix-normal, but this hasn’t been incorporated into Stan-dev. I defer to the experts; there have been discussions on the subject for several years, and as Gaussian Processes seem to be getting trendier these days, something may come of them soon. If my implementation winds up being too slow, which is pretty likely, we may need to switch to TensorFlow or some other machine learning library after validating in Stan’s generative version. Or, it may be that the generative model is too slow, but just calling <code>optimize</code> on it is adequate.</p>
 <p>Instead of writing the model directly with a matrix-variate normal distribution, I’m going to follow Rob Trangucci’s <a href="mc-stan.org/events/stancon2017-notebooks/stancon2017-trangucci-hierarchical-gps.pdf">demonstration of hiearchical GPs</a> from this year’s Stan conference.</p>
 <pre class="r"><code>knitr::opts_chunk$set(warning = FALSE, message = FALSE)
-library(tidyverse)</code></pre>
-<pre><code>## Loading tidyverse: ggplot2
-## Loading tidyverse: tibble
-## Loading tidyverse: tidyr
-## Loading tidyverse: readr
-## Loading tidyverse: purrr
-## Loading tidyverse: dplyr</code></pre>
-<pre><code>## Conflicts with tidy packages ----------------------------------------------</code></pre>
-<pre><code>## filter(): dplyr, stats
-## lag():    dplyr, stats</code></pre>
-<pre class="r"><code>library(rstan) #2.17 hasn't been released yet for rstan, but we'll be using cmdstan 2.17.</code></pre>
-<pre><code>## Loading required package: StanHeaders</code></pre>
-<pre><code>## rstan (Version 2.16.2, packaged: 2017-07-03 09:24:58 UTC, GitRev: 2e1f913d3ca3)</code></pre>
-<pre><code>## For execution on a local, multicore CPU with excess RAM we recommend calling
-## rstan_options(auto_write = TRUE)
-## options(mc.cores = parallel::detectCores())</code></pre>
-<pre><code>## 
-## Attaching package: 'rstan'</code></pre>
-<pre><code>## The following object is masked from 'package:tidyr':
-## 
-##     extract</code></pre>
-<pre class="r"><code>rstan_options(auto_write = TRUE)
+library(tidyverse)
+library(rstan) #2.17 hasn't been released yet for rstan, but we'll be using cmdstan 2.17.
+rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())</code></pre>
 <p>As before, this model can be found in the stan directory.</p>
 <pre class="r"><code>cat(read_file(&quot;../stan/gp.stan&quot;))</code></pre>
-<pre><code>## // Full gp model, in which beta is matrix-variate
-## // wound up implementing the beta variance via 
-## // hierarchy, as in Trangucci's work.
-## data {
-##   int&lt;lower=1&gt; N; // # of dts
-##   int&lt;lower=1&gt; A; // # of endos
-##   int&lt;lower=1&gt; B; // # of betas
-##   matrix[N,A] y;
-##   matrix[B,A] x[N]; // Exog
-##   cov_matrix[A] y_cov[N]; //contemporaneous covariance of ys
-## }
-## transformed data {
-##   real t[N];
-##   matrix[A,A] L_y_cov[N];
-##   real delta = 1e-9;
-##   vector[B] beta_mu_mu = rep_vector(0, B);
-##   for(n in 1:N) {
-##     t[n] = n;
-##     L_y_cov[n] = cholesky_decompose(y_cov[n]);
-##   }
-## }
-## parameters {
-##   matrix[N,B] beta;
-##   real&lt;lower=0&gt; alpha[B];
-##   vector&lt;lower=0&gt;[B] sigma;
-##   real&lt;lower=0&gt; length_scale[B];
-##   cholesky_factor_corr[B] L_omega; //eta correlation
-##   matrix[N,B] beta_mu; //Instead of 0s, I'm going to 
-##   //put the beta-wise covariance on this term to avoid
-##   //having a massive kronecker product matrix.
-## }
-## model {
-##   matrix[N,N] cov[B];
-##   matrix[B,B] L_Sigma_b;
-## 
-##   to_vector(alpha) ~ normal(0.5, 1);
-##   sigma ~ cauchy(0, 1);
-##   L_omega ~ lkj_corr_cholesky(4);
-## 
-##   L_Sigma_b = diag_pre_multiply(sigma, L_omega);
-##   for(b in 1:B) 
-##     cov[b] = cov_exp_quad(t, alpha[b], length_scale[b]);
-##   for(n in 1:N) {
-##     beta_mu[n] ~ multi_normal_cholesky(beta_mu_mu, L_Sigma_b);
-##     for(b in 1:B)
-##       cov[b, n, n] = cov[b, n, n] + delta;
-##   }
-##   for(b in 1:B)
-##     beta[,b] ~ multi_normal_cholesky(beta_mu[,b], cholesky_decompose(cov[b]));
-##   for(n in 1:N)
-##     y[n] ~ multi_normal_cholesky(beta[n] * x[n], L_y_cov[n]);
-## }</code></pre>
+<pre><code>// Full gp model, in which beta is matrix-variate
+// wound up implementing the beta variance via 
+// hierarchy, as in Trangucci's work.
+data {
+  int&lt;lower=1&gt; N; // # of dts
+  int&lt;lower=1&gt; A; // # of endos
+  int&lt;lower=1&gt; B; // # of betas
+  matrix[N,A] y;
+  matrix[B,A] x[N]; // Exog
+  cov_matrix[A] y_cov[N]; //contemporaneous covariance of ys
+}
+transformed data {
+  real t[N];
+  matrix[A,A] L_y_cov[N];
+  real delta = 1e-9;
+  vector[B] beta_mu_mu = rep_vector(0, B);
+  for(n in 1:N) {
+    t[n] = n;
+    L_y_cov[n] = cholesky_decompose(y_cov[n]);
+  }
+}
+parameters {
+  matrix[N,B] beta;
+  real&lt;lower=0&gt; alpha[B];
+  vector&lt;lower=0&gt;[B] sigma;
+  real&lt;lower=0&gt; length_scale[B];
+  cholesky_factor_corr[B] L_omega; //eta correlation
+  matrix[N,B] beta_mu; //Instead of 0s, I'm going to 
+  //put the beta-wise covariance on this term to avoid
+  //having a massive kronecker product matrix.
+}
+model {
+  matrix[N,N] cov[B];
+  matrix[B,B] L_Sigma_b;
+
+  to_vector(alpha) ~ normal(0.5, 1);
+  sigma ~ cauchy(0, 1);
+  L_omega ~ lkj_corr_cholesky(4);
+
+  L_Sigma_b = diag_pre_multiply(sigma, L_omega);
+  for(b in 1:B) 
+    cov[b] = cov_exp_quad(t, alpha[b], length_scale[b]);
+  for(n in 1:N) {
+    beta_mu[n] ~ multi_normal_cholesky(beta_mu_mu, L_Sigma_b);
+    for(b in 1:B)
+      cov[b, n, n] = cov[b, n, n] + delta;
+  }
+  for(b in 1:B)
+    beta[,b] ~ multi_normal_cholesky(beta_mu[,b], cholesky_decompose(cov[b]));
+  for(n in 1:N)
+    y[n] ~ multi_normal_cholesky(beta[n] * x[n], L_y_cov[n]);
+}</code></pre>
 <p>This is substantially different from the code for single asset, because I wanted to avoid making mistakes in vectorizing over two different dimensions (both exogs and endos). This format is much more readable. Also note I’m specifying a fixed endogenous covariance, rather than estimating. This is to reduce parameters. You could plug GARCH in here directly, or fit a GARCH model separately and provide that. I would be inclined to stick in plain EWMA (exponentially weighted moving average) endogenous covariance, as I’ve not seen much improvement when using GARCH in these macro FX models in the past. For now, let’s do our fake data simulation and parameter recovery test with the constant endogenous covariance matrix.</p>
 </div>
 <div id="generating-fake-data" class="section level1">
@@ -369,6 +350,9 @@ mcmc_recover_hist(gp_fit_array[,,grep(&quot;(alpha|length_scale|sigma)&quot;, di
 <p>This means the backtest is going to require a lot of hardware.</p>
 <p>Next up, real data.</p>
 </div>
+</div>
+<div id="next" class="section level1">
+<h1>Next: <a href="Forecasting.html">Forecasting</h1>
 </div>
 <div class="footnotes">
 <hr />

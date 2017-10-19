@@ -135,7 +135,6 @@ $(document).ready(function () {
 <li><a href="#back-to-testing">Back to Testing</a></li>
 </ul></li>
 <li><a href="#on-currency-forecasting-in-general">On Currency Forecasting in General</a></li>
-<li><a href="#next-up-backtesting">Next up: Backtesting</a></li>
 </ul>
 </div>
 
@@ -143,97 +142,74 @@ $(document).ready(function () {
 <h1>Forecasting</h1>
 <p>At long last, we’re ready to look at the actual data. I also need to add a constant into the regression.</p>
 <pre class="r"><code>knitr::opts_chunk$set(warning = FALSE, message = FALSE)
-library(tidyverse)</code></pre>
-<pre><code>## Loading tidyverse: ggplot2
-## Loading tidyverse: tibble
-## Loading tidyverse: tidyr
-## Loading tidyverse: readr
-## Loading tidyverse: purrr
-## Loading tidyverse: dplyr</code></pre>
-<pre><code>## Conflicts with tidy packages ----------------------------------------------</code></pre>
-<pre><code>## filter(): dplyr, stats
-## lag():    dplyr, stats</code></pre>
-<pre class="r"><code>library(lubridate)</code></pre>
-<pre><code>## 
-## Attaching package: 'lubridate'</code></pre>
-<pre><code>## The following object is masked from 'package:base':
-## 
-##     date</code></pre>
-<pre class="r"><code>library(rstan) #2.17 hasn't been released yet for rstan, but we'll be using cmdstan 2.17.</code></pre>
-<pre><code>## Loading required package: StanHeaders</code></pre>
-<pre><code>## rstan (Version 2.16.2, packaged: 2017-07-03 09:24:58 UTC, GitRev: 2e1f913d3ca3)</code></pre>
-<pre><code>## For execution on a local, multicore CPU with excess RAM we recommend calling
-## rstan_options(auto_write = TRUE)
-## options(mc.cores = parallel::detectCores())</code></pre>
-<pre><code>## 
-## Attaching package: 'rstan'</code></pre>
-<pre><code>## The following object is masked from 'package:tidyr':
-## 
-##     extract</code></pre>
-<pre class="r"><code>rstan_options(auto_write = TRUE)
-options(mc.cores = parallel::detectCores())</code></pre>
+library(tidyverse)
+library(lubridate)
+library(rstan) #2.17 hasn't been released yet for rstan, but we'll be using cmdstan 2.17.
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+</code></pre>
 <p>To backtest (or cross-validate, depending on how you came by your statistical knowledge), we will be running the model on segments of the data with the expectation that we will predict one period into the future. We can generate the full posterior distribution of the forecast by adding a generated data section to the model, and passing an additional matrix of exog values for the latest date.</p>
-<p>Here is the full GP model with added hooks for forecasting:</p>
-<pre class="r"><code>cat(read_file(&quot;../stan/gp_forecast.stan&quot;))</code></pre>
-<pre><code>## // Full gp model, plus forecasting implemntation 
-## data {
-##   int&lt;lower=1&gt; N1; // # of dts for regression
-##   int&lt;lower=1&gt; N2;  // # of dts for forecast
-##   int&lt;lower=1&gt; A; // # of endos
-##   int&lt;lower=1&gt; B; // # of betas
-##   matrix[N1,A] y;
-##   matrix[B,A] x[N1+N2]; // Exog
-##   cov_matrix[A] y_cov[N1+N2]; //contemporaneous covariance of ys
-## }
-## transformed data {
-##   int&lt;lower=1&gt; N = N1+N2;
-##   real t[N];
-##   matrix[A,A] L_y_cov[N];
-##   real delta = 1e-9;
-##   vector[B] beta_mu_mu = rep_vector(0, B);
-##   for(n in 1:N) {
-##     t[n] = n;
-##     L_y_cov[n] = cholesky_decompose(y_cov[n]);
-##   }
-## }
-## parameters {
-##   matrix[N,B] beta;
-##   real&lt;lower=0&gt; alpha[B];
-##   vector&lt;lower=0&gt;[B] sigma;
-##   real&lt;lower=0&gt; length_scale[B];
-##   cholesky_factor_corr[B] L_omega; //eta correlation
-##   matrix[N,B] beta_mu; //Instead of 0s, I'm going to 
-##   //put the beta-wise covariance on this term to avoid
-##   //having a massive kronecker product matrix.
-## }
-## model {
-##   matrix[N,N] cov[B];
-##   matrix[B,B] L_Sigma_b;
-## 
-##   to_vector(alpha) ~ normal(0.5, 1);
-##   sigma ~ cauchy(0, 1);
-##   L_omega ~ lkj_corr_cholesky(4);
-##   to_vector(length_scale) ~ gamma(6, 7);
-## 
-##   L_Sigma_b = diag_pre_multiply(sigma, L_omega);
-##   for(b in 1:B) 
-##     cov[b] = cov_exp_quad(t, alpha[b], length_scale[b]);
-##   for(n in 1:N) {
-##     beta_mu[n] ~ multi_normal_cholesky(beta_mu_mu, L_Sigma_b);
-##     for(b in 1:B)
-##       cov[b, n, n] = cov[b, n, n] + delta;
-##   }
-##   for(b in 1:B)
-##     beta[,b] ~ multi_normal_cholesky(beta_mu[,b], cholesky_decompose(cov[b]));
-##   for(n in 1:N1)
-##     y[n] ~ multi_normal_cholesky(beta[n] * x[n], L_y_cov[n]);
-## }
-## generated quantities {
-##   vector[A] new_y[N2];
-##   for(n in 1:N2)
-##     new_y[n] = multi_normal_cholesky_rng(to_vector(beta[N1+n] * x[N1+n]),
-##                                         L_y_cov[N1+n]);
-## }</code></pre>
+<p>Here is the full GP model with added hooks for forecasting<sup><a href="#fn1" id="ref1">1</a></sup>:</p>
+<pre class="r"><code>cat(read_file(&quot;../stan/gp_forecasts.stan&quot;))</code></pre>
+<pre><code>// Full gp model, plus forecasting implementation 
+data {
+  int&lt;lower=1&gt; N1; // # of dts for regression
+  int&lt;lower=1&gt; N2;  // # of dts for forecast
+  int&lt;lower=1&gt; A; // # of endos
+  int&lt;lower=1&gt; B; // # of betas
+  matrix[N1,A] y;
+  matrix[B,A] x[N1+N2]; // Exog
+  cov_matrix[A] y_cov[N1+N2]; //contemporaneous covariance of ys
+}
+transformed data {
+  int&lt;lower=1&gt; N = N1+N2;
+  real t[N];
+  matrix[A,A] L_y_cov[N];
+  real delta = 1e-9;
+  vector[B] beta_mu_mu = rep_vector(0, B);
+  for(n in 1:N) {
+    t[n] = n;
+    L_y_cov[n] = cholesky_decompose(y_cov[n]);
+  }
+}
+parameters {
+  matrix[N,B] beta;
+  real&lt;lower=0&gt; alpha[B];
+  vector&lt;lower=0&gt;[B] sigma;
+  real&lt;lower=0&gt; length_scale[B];
+  cholesky_factor_corr[B] L_omega; //eta correlation
+  matrix[N,B] beta_mu; //Instead of 0s, I'm going to 
+  //put the beta-wise covariance on this term to avoid
+  //having a massive kronecker product matrix.
+}
+model {
+  matrix[N,N] cov[B];
+  matrix[B,B] L_Sigma_b;
+
+  to_vector(alpha) ~ normal(0.25, 0.5);
+  sigma ~ cauchy(0, 1);
+  L_omega ~ lkj_corr_cholesky(4);
+  to_vector(length_scale) ~ gamma(4, 4);
+
+  L_Sigma_b = diag_pre_multiply(sigma, L_omega);
+  for(b in 1:B) 
+    cov[b] = cov_exp_quad(t, alpha[b], length_scale[b]);
+  for(n in 1:N) {
+    beta_mu[n] ~ multi_normal_cholesky(beta_mu_mu, L_Sigma_b);
+    for(b in 1:B)
+      cov[b, n, n] = cov[b, n, n] + delta;
+  }
+  for(b in 1:B)
+    beta[,b] ~ multi_normal_cholesky(beta_mu[,b], cholesky_decompose(cov[b]));
+  for(n in 1:N1)
+    y[n] ~ multi_normal_cholesky(beta[n] * x[n], L_y_cov[n]);
+}
+generated quantities {
+  vector[A] new_y[N2];
+  for(n in 1:N2)
+    new_y[n] = multi_normal_cholesky_rng(to_vector(beta[N1+n] * x[N1+n]),
+                                        L_y_cov[N1+n]);
+}</code></pre>
 </div>
 <div id="exogs" class="section level1">
 <h1>Exogs</h1>
@@ -381,13 +357,20 @@ mcmc_trace(as.array(gp_fit), pars=c(&quot;alpha[1]&quot;, &quot;sigma[2]&quot;, 
 <p>So why bother? What I have given you is the reason I believe no amount of layers of neural nets—or of any other algorithm which takes as an assumption that the data is stochastic—will be able to accurately predict market movements on any human timescale. However, we know that for currencies, interest rate expectations (i.e., forecasts of carry) and other fundamental factors impact the decision-making of the agents I described above. The hope is that, over time, the small differences between predicted means, plus better-than-nothing modeling of the relationships between these factors, and the relationships between the predictions, will add up. The investor will have an edge in harvesting the carry over a portfolio of currencies, whilst weathering idiosyncratic price movements.</p>
 </div>
 <div id="next-up-backtesting" class="section level1">
-<h1>Next up: Backtesting</h1>
 <p>Save the additional data manipulations.</p>
 <pre class="r"><code>save(y_cov,y_offset,N1,N2,A,exogs,endo,file=&quot;../data/forecasting.rData&quot;)</code></pre>
 </div>
 
+<div id="next" class="section level1">
+<h1>Next: <a href="Backtesting.html">Backtesting</a></h1>
+</div>
 
-
+<div class="footnotes">
+<hr />
+<ol>
+<li id="fn1"><p>Unfortunately, knitr doesn't render Stan code correctly in html yet, so there's no syntax highlighting. They don't escape sequences like "int&lt;lower=1&gt;" properly.<a href="#ref1">↩</a></p></li>
+</ol>
+</div>
 
 </div>
 
