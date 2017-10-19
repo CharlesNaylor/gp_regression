@@ -11,7 +11,7 @@ Now let's specify and test the full model, with multiple inputs and multiple out
 
 # Model Overview
 
-Restating what I put at the top of the [overview notebook](https://cdn.rawgit.com/billWalker/gp_regression/edac7693/doc/Specifying_the_Model-Overview_and_Simplest_Implementation.html)
+Restating what I put at the top of the [overview notebook](Specifying_the_Model-Overview_and_Simplest_Implementation.html)
 
 $$
   y_{t+1} \sim N(\beta_t X_t, \Sigma_y) \\

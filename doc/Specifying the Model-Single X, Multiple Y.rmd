@@ -8,7 +8,7 @@ output:
 ---
 # Gaussian Process Regression for Multiple Assets, single factor
 
-Following on from the [model overview and simple implementation notebook](https://rawgit.com/billWalker/gp_regression/add_single_xy/doc/Specifying%20the%20Model-Overview%20and%20Simplest%20Implementation.rmd), we'll now expand from a single Y to a set of multiple, correlated Ys.
+Following on from the [model overview and simple implementation notebook](Specifying_the_Model-Overview_and_Simplest_Implementation.html), we'll now expand from a single Y to a set of multiple, correlated Ys.
 
 In equation form:
 $$

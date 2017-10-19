@@ -121,11 +121,12 @@ $(document).ready(function () {
 
 <div id="TOC">
 <ul>
-<li><a href="#model-overview">Model Overview</a></li>
-<li><a href="#gaussian-process-regression-for-a-single-asset-single-factor">Gaussian Process Regression for a Single Asset, single factor</a><ul>
-<li><a href="#generate-fake-data">Generate Fake Data</a></li>
-<li><a href="#recover-known-parameters">Recover Known Parameters</a></li>
-</ul></li>
+	<li><a href="#model-overview">Model Overview</a></li>
+	<li><a href="#gaussian-process-regression-for-a-single-asset-single-factor">Gaussian Process Regression for a Single Asset, single factor</a>
+	<ul>
+		<li><a href="#generate-fake-data">Generate Fake Data</a></li>
+		<li><a href="#recover-known-parameters">Recover Known Parameters</a></li>
+	</ul></li>
 </ul>
 </div>
 
@@ -174,7 +175,7 @@ library(tidyverse)
 library(rstan) #2.17 hasn't been released yet for rstan, but we'll be using cmdstan 2.17.
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())</code></pre>
-<p><strong>NB</strong> RStudio actually provides a <code>stan</code> chunk-style, which will compile the model when executed. However, in my experience RStudio gets unstable when one runs a large stan model inside it. Additionally, the chunks don’t show up when you compile notebooks to html with knitr. I’m just going to state the model here. This is <a href="https://github.com/billWalker/gp_regression/blob/master/stan/single_xy_gp.stan">stan/single_xy_gp.stan</a> in the repository.</p>
+<p><strong>NB</strong> RStudio actually provides a <code>stan</code> chunk-style, which will compile the model when executed. However, in my experience RStudio gets unstable when one runs a large stan model inside it. Additionally, the chunks don’t show up when you compile notebooks to html with knitr. I’m just going to state the model here. This is <a href="https://github.com/CharlesNaylor/gp_regression/blob/master/stan/single_xy_gp.stan">stan/single_xy_gp.stan</a> in the repository.</p>
 <pre class="r"><code>cat(read_file(&quot;../stan/single_xy_gp.stan&quot;))</code></pre>
 <pre><code>// multi-dimensional input latent variable GP with single y
 // cf. manual 2.17.0, pp 253-254, 

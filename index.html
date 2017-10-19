@@ -14,21 +14,116 @@
 </script>
 </head>
 <body>
-<h1 id="gp-regression">Gaussian Process Regression for FX Forecasting</h1>
+<h1 id="gp-regression">Gaussian Process Regression for FX Forecasting: A Case Study</h1>
 <h2 id="summary">Summary</h2>
 <p>These documents show the start-to-finish process of quantitative analysis on the buy-side to produce a forecasting model. The code demonstrates the use of Gaussian processes in a dynamic linear regression, as a replacement for the Kalman Filter. More generally, Gaussian processes can be used in nonlinear regressions in which the relationship between xs and ys is assumed to vary smoothly with respect to the values of the xs. We will assume that the relationship varies smoothly with respect to time, but is static across values of xs within a given time. It's more usual to use Gaussian processes as a nonlinear regression technique, so that the relationship between x and y varies smoothly with respect to the values of xs, like a continuous version of random forest regressions.</p>
 <p>The full code is available as a github project <a href="https://github.com/CharlesNaylor/gp_regression">here</a>. As I'm attempting to show how an analyst might use R or Python, coupled with Stan, to develop a model like this one, most of the setup has been done alongside extensive commentary in a series of R Studio Notebooks. These are compiled to html and linked below.</p>
 <h2 id="process">Process</h2>
 <ol style="list-style-type: decimal">
-<li><a href="doc/Gathering_Data.html">Gathering Data</a>: Initial raw data retrieval and cleanup.</li>
-<li><a href="doc/Calculating_Factors.html">Calculating Factors</a>: Turning raw data into normalized factors.</li>
-<li><a href="doc/Specifying_the_Model-Overview_and_Simplest_Implementation.html">Model Overview and Simple Implementation</a> State the full model, then start by validating with a single factor, single asset version using known parameters.</li>
-<li><a href="doc/Specifying_the_Model-Single_X%2C_Multiple_Y.html">Model Validation - Single X, Multiple Y</a> Validate a single factor, multiple asset version using known parameters.</li>
-<li><a href="doc/Specifying_the_Model-Full_Model.html">Model Validation - Full Model</a> Validate the full multi-factor, multi-asset version using known parameters.</li>
-<li><a href="doc/Forecasting.html">Forecasting</a> Test the model using the actual data.</li>
-<li><a href="doc/Backtesting.html">Backtesting</a> Test all historical weeks using a processor cluster</li>
-</ol>
-<h1 id="conclusions">Conclusions</h1>
+	<li><h3><a href="doc/Gathering_Data.html">Gathering Data</a></h3>Initial raw data retrieval and cleanup.</li>
+	<ul>
+		<li><a href="doc/Gathering_Data.html#load-libraries">Load Libraries</a></li>
+		<li><a href="doc/Gathering_Data.html#raw-data">Raw Data</a>
+		<ul>
+			<li><a href="doc/Gathering_Data.html#swap-rates">Swap Rates</a></li>
+			<li><a href="doc/Gathering_Data.html#spot-rates">Spot Rates</a></li>
+			<li><a href="doc/Gathering_Data.html#equity-indexes">Equity Indexes</a></li>
+			<li><a href="doc/Gathering_Data.html#cleanup">Cleanup</a></li>
+		</ul></li>
+		<li><a href="doc/Gathering_Data.html#in-summary">In Summary</a></li>
+	</ul>
+	<li><h3><a href="doc/Calculating_Factors.html">Calculating Factors</a></h3>Turning raw data into normalized factors.</li>
+	<ul>
+	<li><a href="doc/Calculating_Factors.html#setup">Setup</a></li>
+	<li><a href="doc/Calculating_Factors.html#factors">Factors</a>
+	<ul>
+		<li><a href="doc/Calculating_Factors.html#equity">Equity</a></li>
+		<li><a href="doc/Calculating_Factors.html#spot_8w">Spot_8W</a></li>
+		<li><a href="doc/Calculating_Factors.html#y-swap-rate">2Y Swap Rate</a>
+		<ul>
+			<li><a href="doc/Calculating_Factors.html#a-note-on-scaling-as-it-relates-to-the-final-model">A note on scaling as it relates to the final model</a></li>
+		</ul></li>
+	<li><a href="doc/Calculating_Factors.html#twoyear_d8w">TwoYear_d8W</a></li>
+	<li><a href="doc/Calculating_Factors.html#yield-curve">Yield Curve</a></li>
+	<li><a href="doc/Calculating_Factors.html#review-exogs">Review Exogs</a></li>
+	<li><a href="doc/Calculating_Factors.html#carry-return-endogenous-variable">Carry Return (endogenous variable)</a></li>
+	</ul></li>
+</ul>
+	<li><h3><a href="doc/Specifying_the_Model-Overview_and_Simplest_Implementation.html">Model Overview and Simple Implementation</a></h3>State the full model, then start by validating with a single factor, single asset version using known parameters.</li>
+	<ul>
+		<li><a href="doc/Specifying_the_Model-Overview_and_Simplest_Implementation.html#model-overview">Model Overview</a></li>
+		<li><a href="doc/Specifying_the_Model-Overview_and_Simplest_Implementation.html#gaussian-process-regression-for-a-single-asset-single-factor">Gaussian Process Regression for a Single Asset, single factor</a>
+		<ul>
+			<li><a href="doc/Specifying_the_Model-Overview_and_Simplest_Implementation.html#generate-fake-data">Generate Fake Data</a></li>
+			<li><a href="doc/Specifying_the_Model-Overview_and_Simplest_Implementation.html#recover-known-parameters">Recover Known Parameters</a></li>
+		</ul></li>
+	</ul>
+	<li><h3><a href="doc/Specifying_the_Model-Single_X%2C_Multiple_Y.html">Model Validation - Single X, Multiple Y</a></h3>Validate a single factor, multiple asset version using known parameters.</li>
+	<ul>
+		<li><a href="doc/Specifying_the_Model-Single_X%2C_Multiple_Y.html#gaussian-process-regression-for-multiple-assets-single-factor">Gaussian Process Regression for Multiple Assets, single factor</a>
+		<ul>
+			<li><a href="doc/Specifying_the_Model-Single_X%2C_Multiple_Y.html#generate-fake-data">Generate Fake Data</a></li>
+			<li><a href="doc/Specifying_the_Model-Single_X%2C_Multiple_Y.html#recover-known-parameters">Recover Known Parameters</a></li>
+	</ul></li>
+</ul>
+	<li><h3><a href="doc/Specifying_the_Model-Full_Model.html">Model Validation - Full Model</a></h3>Validate the full multi-factor, multi-asset version using known parameters.</li>
+	<ul>
+		<li><a href="doc/Specifying_the_Model-Full_Model.html#model-overview">Model Overview</a></li>
+		<li><a href="doc/Specifying_the_Model-Full_Model.html#generating-fake-data">Generating Fake Data</a><ul>
+		<li><a href="doc/Specifying_the_Model-Full_Model.html#recover-known-parameters">Recover Known Parameters</a></li>
+	</ul></li>
+	</ul>
+	<li><h3><a href="doc/Forecasting.html">Forecasting</a></h3>Test the model using the actual data.</li>
+	<ul>
+		<li><a href="doc/Forecasting.html#forecasting">Forecasting</a></li>
+		<li><a href="doc/Forecasting.html#exogs">Exogs</a><ul>
+		<li><a href="doc/Forecasting.html#add-constant-scale-carry-filter-down">Add Constant, Scale Carry, filter down</a></li>
+		<li><a href="doc/Forecasting.html#reshape">Reshape</a></li>
+	</ul></li>
+		<li><a href="doc/Forecasting.html#endos">Endos</a></li>
+		<li><a href="doc/Forecasting.html#additional-parameters---sigma_y">Additional Parameters - <span class="math inline">\(\Sigma_y\)</span></a></li>
+		<li><a href="doc/Forecasting.html#test">Test</a><ul>
+		<li><a href="doc/Forecasting.html#backtesting-and-processing-power">Backtesting and Processing Power</a></li>
+		<li><a href="doc/Forecasting.html#testing">Testing</a></li>
+		<li><a href="doc/Forecasting.html#parameter-scaling">Parameter Scaling</a></li>
+		<li><a href="doc/Forecasting.html#back-to-testing">Back to Testing</a></li>
+	</ul></li>
+	<li><a href="doc/Forecasting.html#on-currency-forecasting-in-general">On Currency Forecasting in General</a></li>
+</ul>
+	<li><h3><a href="doc/Backtesting.html">Backtesting</a></h3>Test all historical weeks using a processor cluster</li>
+	<ul>
+	<li><a href="doc/Backtesting.html#efficiency">Efficiency</a>
+	<ul>
+		<li><a href="doc/Backtesting.html#scoping-the-problem">Scoping the Problem</a></li>
+	</ul></li>
+		<li><a href="doc/Backtesting.html#set-up-the-data">Set up the data</a></li>
+		<li><a href="doc/Backtesting.html#run-it-elsewhere">Run it elsewhere</a></li>
+		<li><a href="doc/Backtesting.html#examining-cmdstan-output">Examining CmdStan Output</a>
+		<ul>
+			<li><a href="doc/Backtesting.html#functions">Functions</a>
+			<ul>
+				<li><a href="doc/Backtesting.html#check-fits">Check Fits</a></li>
+				<li><a href="doc/Backtesting.html#assemble-betas">Assemble Betas</a></li>
+				<li><a href="doc/Backtesting.html#assemble-forecast-distributions">Assemble Forecast distributions</a></li>
+			</ul></li>
+			<li><a href="doc/Backtesting.html#run-the-functions">Run the functions</a></li>
+			<li><a href="doc/Backtesting.html#results">Results</a>
+			<ul>
+				<li><a href="doc/Backtesting.html#assemble-fitted-betas">Assemble Fitted Betas</a></li>
+			</ul></li>
+				<li><a href="doc/Backtesting.html#forecast-betas">Forecast Betas</a>
+			<ul>
+				<li><a href="doc/Backtesting.html#handling-chf">Handling CHF</a></li>
+			</ul></li>
+			<li><a href="doc/Backtesting.html#forecast-ys">Forecast Ys</a>
+			<ul>
+				<li><a href="doc/Backtesting.html#posterior-predictive-check">Posterior Predictive Check</a></li>
+			</ul></li>
+		</ul></li>
+		<li><a href="doc/Backtesting.html#conclusions">Conclusions</a></li>
+	</ul>
+	</ol>
+<h2 id="conclusions">Conclusions</h2>
 <p>The true model for returns in any asset class is the combination of carry and price movements. In FX, the carry is relatively stable but subject to punctuated equilibrium as new data comes to light. In developed markets, this data primarily consists of central bank rate decisions and economic data that might affect those decisions. Price movements, however, are the deterministic result of countless iterative, interacting agents. While we may know many of these agents' motives, it is not possible to aggregate their behavior with any accuracy, because the actions of each agent are affected by those of all of the other agents, and small measurement errors compound. It is impossible to tell, for example, the periodicity of market data. A day's worth of price movements at 5-minute increments looks the same as a year's worth of daily movements. The asset price measures the result of a chaotic, nonlinear dynamical system.</p>
 <p>So why bother? What I have given you is the reason I believe no amount of layers of neural nets---or of any other algorithm which takes as an assumption that the data is stochastic---will be able to accurately predict market movements on any human timescale. However, we know that for currencies, interest rate expectations (i.e., forecasts of carry) and other fundamental factors impact the decision-making of the agents I described above. The hope is that, over time, the small differences between predicted means, plus better-than-nothing modeling of the relationships between these factors, and the relationships between the predictions, will add up. The investor will have an edge in harvesting the carry over a portfolio of currencies, whilst weathering idiosyncratic price movements.</p>
 <h2 id="vKalmanFilter">Why not a Kalman Filter?</h2>
@@ -36,7 +131,7 @@
 <p>However, in order to achieve this efficiency, the Kalman filter throws away anything we might learn about the nature of past intertemporal relationships, beyond what we can see in the means and covariance matrices for all variables. It also presumes Gaussian distributions. Advances on the original filter relax the Gaussian assumption, but not the Markovian one.</p>
 <p>With a Gaussian process (GP), we can assume that parameters are related to one another in time via an arbitrary function. The disadvantage in comparison to Kalman filters is that we will wind up inverting a matrix of size T, where T is the total number of time periods in which we are interested, in order to calculate parameter values. GPs are also not necessarily solvable, and so we must rely on MCMC or its variants to evaluate the posterior distribution.</p>
 <p>With advances in processing power, this is less of a problem than it used to be. An upcoming version of Stan is promising GPU-powered matrix inversion, and should really kick off the use of GPs in production.</p>
-<h1 id="acknowledgements">Acknowledgements</h1>
+<h2 id="acknowledgements">Acknowledgements</h2>
 <p>In preparing these notebooks, I referred heavily to the Stan Manual, and the work of Jim Savage, Rob Trangucci, and Michael Betancourt. I had my initiation into Bayesian forecasting from Jose Mario Quintana, currently principal at BEAM, LLC.</p>
 <p>For backtesting, this research was supported in part through computational resources provided by Syracuse University, particularly the OrangeGrid distributed computing system. I also enjoyed the support of Syracuse University's Cyberinfrastructure Engineer, Larne Pekowsky. OrangeGrid is supported by NSF award ACI-1341006, and Larne is supported by NSF award ACI-1541396.
 </body>
