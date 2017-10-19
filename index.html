@@ -30,5 +30,8 @@
 <p>However, in order to achieve this efficiency, the Kalman filter throws away anything we might learn about the nature of past intertemporal relationships, beyond what we can see in the means and covariance matrices for all variables. It also presumes Gaussian distributions. Advances on the original filter relax the Gaussian assumption, but not the Markovian one.</p>
 <p>With a Gaussian process (GP), we can assume that parameters are related to one another in time via an arbitrary function. The disadvantage in comparison to Kalman filters is that we will wind up inverting a matrix of size T, where T is the total number of time periods in which we are interested, in order to calculate parameter values. GPs are also not necessarily solvable, and so we must rely on MCMC or its variants to evaluate the posterior distribution.</p>
 <p>With advances in processing power, this is less of a problem than it used to be. An upcoming version of Stan is promising GPU-powered matrix inversion, and should really kick off the use of GPs in production.</p>
+<h1 id="acknowledgements">Acknowledgements</h1>
+<p>In preparing these notebooks, I referred heavily to the Stan Manual, and the work of Jim Savage, Rob Trangucci, and Michael Betancourt. I had my initiation into Bayesian forecasting from Jose Mario Quintana, currently principal at BEAM, LLC.</p>
+<p>For backtesting, this research was supported in part through computational resources provided by Syracuse University, particularly the OrangeGrid distributed computing system. I also enjoyed the support of Syracuse University's Cyberinfrastructure Engineer, Larne Pekowsky. OrangeGrid is supported by NSF award ACI-1341006, and Larne is supported by NSF award ACI-1541396.
 </body>
 </html>
