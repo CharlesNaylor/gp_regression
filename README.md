@@ -2,7 +2,7 @@
 
 ## Summary
 
-This code will demonstrate the use of Gaussian processes in a dynamic linear regression, as a replacement for the Kalman Filter. More generally, Gaussian processes can be used in nonlinear regressions in which the relationship between xs and ys is assumed to vary smoothly with respect to the values of the xs. We will assume that the relationship varies smoothly with respect to time, but is static across values of xs within a given time. It's more usual to use Gaussian processes as a nonlinear regression technique, so that the relationship between x and y varies smoothly with respect to the values of xs, like a continuous version of random forest regressions.
+This code will demonstrate the use of Gaussian processes in a dynamic linear regression, as a replacement for the Kalman Filter. More generally, Gaussian processes can be used in nonlinear regressions in which the relationship between xs and ys is assumed to vary smoothly with respect to the values of the xs. We will assume that the relationship varies smoothly with respect to time, but is static across values of xs within a given time. Another use for Gaussian processes is as a nonlinear regression technique, so that the relationship between x and y varies smoothly with respect to the values of xs, like a continuous version of random forest regressions.
 
 You can find comments and reasoning in a set of notebooks in the /doc directory.
 

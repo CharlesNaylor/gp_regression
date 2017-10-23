@@ -31,7 +31,7 @@
 </pre>
 </div>
 <h2 id="summary">Summary</h2>
-<p>These documents show the start-to-finish process of quantitative analysis on the buy-side to produce a forecasting model. The code demonstrates the use of Gaussian processes in a dynamic linear regression. More generally, Gaussian processes can be used in nonlinear regressions in which the relationship between xs and ys is assumed to vary smoothly with respect to the values of the xs. We will assume that the relationship varies smoothly with respect to time, but is static across values of xs within a given time. It's more usual to use Gaussian processes as a nonlinear regression technique, so that the relationship between x and y varies smoothly with respect to the values of xs, sort of like a continuous version of random forest regressions.</p>
+<p>These documents show the start-to-finish process of quantitative analysis on the buy-side to produce a forecasting model. The code demonstrates the use of Gaussian processes in a dynamic linear regression. More generally, Gaussian processes can be used in nonlinear regressions in which the relationship between xs and ys is assumed to vary smoothly with respect to the values of the xs. We will assume that the relationship varies smoothly with respect to time, but is static across values of xs within a given time. Another use of Gaussian processes is as a nonlinear regression technique, so that the relationship between x and y varies smoothly with respect to the values of xs, sort of like a continuous version of random forest regressions.</p>
 <p>The full code is available as a github project <a href="https://github.com/CharlesNaylor/gp_regression">here</a>. As I'm attempting to show how an analyst might use R or Python, coupled with Stan, to develop a model like this one, the data processing and testing has been done alongside extensive commentary in a series of R Studio Notebooks. These were compiled to html and are linked below.</p>
 <h2 id="process">Process</h2>
 <ol style="list-style-type: decimal">
@@ -152,5 +152,30 @@
 <h2 id="acknowledgements">Acknowledgements</h2>
 <p>In preparing these notebooks, I referred heavily to the Stan Manual, and the work of Jim Savage, Rob Trangucci, and Michael Betancourt. I had my initiation into Bayesian forecasting from Jose Mario Quintana, currently principal at BEAM, LLC.</p>
 <p>For backtesting, this research was supported in part through computational resources provided by Syracuse University, particularly the OrangeGrid distributed computing system. I also enjoyed the support of Syracuse University's Cyberinfrastructure Engineer, Larne Pekowsky. OrangeGrid is supported by NSF award ACI-1341006, and Larne is supported by NSF award ACI-1541396.
+<h3> Questions, Comments, Short Speeches?</h3>
+Please feel free to contact me on Twitter at <a href="https://twitter.com/crtnaylor">@CRTNaylor</a>, or <script type="text/javascript" language="javascript">
+<!--
+// Email obfuscator script 2.1 by Tim Williams, University of Arizona
+// Random encryption key feature coded by Andrew Moulden
+// This code is freeware provided these four comment lines remain intact
+// A wizard to generate this code is at http://www.jottings.com/obfuscator/
+{ coded = "YEv5njA@GVvqn.YjV"
+  key = "3cWvl8ytBeS7LqMVXJYpQnD5k6hrugO1UzsZoxETR0KCAwGHa9fNFjI42Pidmb"
+  shift=coded.length
+  link=""
+  for (i=0; i<coded.length; i++) {
+    if (key.indexOf(coded.charAt(i))==-1) {
+      ltr = coded.charAt(i)
+      link += (ltr)
+    }
+    else {     
+      ltr = (key.indexOf(coded.charAt(i))-shift+key.length) % key.length
+      link += (key.charAt(ltr))
+    }
+  }
+document.write("<a href='mailto:"+link+"'>email</a>")
+}
+//-->
+</script><noscript>Sorry, you need Javascript on to email me.</noscript> me.
 </body>
 </html>
