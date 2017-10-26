@@ -238,7 +238,13 @@ bind_rows(exogs, endo %&gt;% rename(value=endo) %&gt;%
 ## 4  spot_z 1.81702173 -1.94670759
 ## 5    yc_z 1.90032961 -2.52255470</code></pre>
 <p>So multiplying by 25 will get us roughly scaled, but not centered. That’s fine, as I want to preserve the meaning of zero as it relates to interest rate differentials.</p>
-<p>We need to do 4 things: * Scale carry * add a constant term * reshape the tidy data into the 3d array the Stan code expects. * filter down to the largest contiguous data set.</p>
+<p>We need to do four things:</p>
+<ul>
+	<li>Scale carry</li>
+	<li>add a constant term</li>
+	<li>reshape the tidy data into the 3d array the Stan code expects.</li>
+	<li>filter down to the largest contiguous data set.</li>
+</ul>
 <p>I’ll reshape last so we use tidy methods to do nearly everything.</p>
 <div id="add-constant-scale-carry-filter-down" class="section level2">
 <h2>Add Constant, Scale Carry, filter down</h2>

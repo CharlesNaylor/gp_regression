@@ -397,6 +397,19 @@ yhat_dist %>% left_join(endo %>% gather(asset,value,-Date) %>%
 My covariance is a bit wider than a normal distribution would be. But then we know the Ys have fat tails, so that's fine.
 
 # Conclusions
-We now have a full backtest of the factor model, and we’ve validated the forecasts against actual values. We’ve also confirmed that the signals from these factors are     swamped by the noise of weekly movements. To reiterate, the trick with these models is to be consistently a bit better than random. The next step is to create optimized     weights using the forecast. As we have used generative modeling, we have the covariance of the forecasts in addition to their point estimate, which should be equivalent     to the median. We therefore do not need a separate risk model, although it would be advisable to validate forecast covariance against one. Apart from better factors, th    e single biggest area in which there is room for improvement is in the Y covariance modeling. With judicious risk management, we can build a winning portfolio on this ba    sis that is mostly[^2] uncorrelated to equities or other traditional assets.
+We now have a full backtest of the factor model, and we’ve validated the forecasts against actual values. We’ve also confirmed that the signals from these factors are swamped by the noise of weekly movements. To reiterate, the trick with these models is to be consistently a bit better than random. The next step is to create optimized weights using the forecast. As we have used generative modeling, we have the covariance of the forecasts in addition to their point estimate, which should be equivalent to the median. We therefore do not need a separate risk model, although it would be advisable to validate forecast covariance against one. Apart from better factors, the single biggest area in which there is room for improvement is in the Y covariance modeling. With judicious risk management, we can build a winning portfolio on this basis that is mostly[^2] uncorrelated to equities or other traditional assets.
 
 [^2]: I say mostly because in a crisis, otherwise unrelated assets become correlated by the virtue of demands on the capital of investors.
+
+```{r eval=F, include=F}
+#output as csv for python
+not_run <- sapply(yhat, is.null)
+map2_dfr(yhat[!not_run], 
+         names(yhat)[!not_run],
+         function(x, dt) {
+           x %>% as_tibble() %>%
+             gather(asset,value) %>%
+             mutate(Date=ymd(dt))
+         })  %>%
+  write_csv("../data/forecast_ys.csv")
+```
