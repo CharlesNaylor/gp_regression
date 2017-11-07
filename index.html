@@ -33,37 +33,11 @@
 <h2 id="summary">Summary</h2>
 <p>These documents show the start-to-finish process of quantitative analysis on the buy-side to produce a forecasting model. The code demonstrates the use of Gaussian processes in a dynamic linear regression. More generally, Gaussian processes can be used in nonlinear regressions in which the relationship between xs and ys is assumed to vary smoothly with respect to the values of the xs. We will assume that the relationship varies smoothly with respect to time, but is static across values of xs within a given time. Another use of Gaussian processes is as a nonlinear regression technique, so that the relationship between x and y varies smoothly with respect to the values of xs, sort of like a continuous version of random forest regressions.</p>
 <p>The full code is available as a github project <a href="https://github.com/CharlesNaylor/gp_regression">here</a>. As I'm attempting to show how an analyst might use R or Python, coupled with Stan, to develop a model like this one, the data processing and testing has been done alongside extensive commentary in a series of R Studio Notebooks. These were compiled to html and are linked below.</p>
+<p>Unless you take a deep personal interest in the trials and tribulations of data sourcing and cleanup, you will probably want to skip ahead to Section 3, Model Overview and Simplest Implementation. I've omitted subheadings for the first two sections to encourage this behavior.</p>
 <h2 id="process">Process</h2>
 <ol style="list-style-type: decimal">
 	<li><h3><a href="doc/Gathering_Data.html">Gathering Data</a></h3>Initial raw data retrieval and cleanup.</li>
-	<ul>
-		<li><a href="doc/Gathering_Data.html#load-libraries">Load Libraries</a></li>
-		<li><a href="doc/Gathering_Data.html#raw-data">Raw Data</a>
-		<ul>
-			<li><a href="doc/Gathering_Data.html#swap-rates">Swap Rates</a></li>
-			<li><a href="doc/Gathering_Data.html#spot-rates">Spot Rates</a></li>
-			<li><a href="doc/Gathering_Data.html#equity-indexes">Equity Indexes</a></li>
-			<li><a href="doc/Gathering_Data.html#cleanup">Cleanup</a></li>
-		</ul></li>
-		<li><a href="doc/Gathering_Data.html#in-summary">In Summary</a></li>
-	</ul>
 	<li><h3><a href="doc/Calculating_Factors.html">Calculating Factors</a></h3>Turning raw data into normalized factors.</li>
-	<ul>
-	<li><a href="doc/Calculating_Factors.html#setup">Setup</a></li>
-	<li><a href="doc/Calculating_Factors.html#factors">Factors</a>
-	<ul>
-		<li><a href="doc/Calculating_Factors.html#equity">Equity</a></li>
-		<li><a href="doc/Calculating_Factors.html#spot_8w">Spot_8W</a></li>
-		<li><a href="doc/Calculating_Factors.html#y-swap-rate">2Y Swap Rate</a>
-		<ul>
-			<li><a href="doc/Calculating_Factors.html#a-note-on-scaling-as-it-relates-to-the-final-model">A note on scaling as it relates to the final model</a></li>
-		</ul></li>
-	<li><a href="doc/Calculating_Factors.html#twoyear_d8w">TwoYear_d8W</a></li>
-	<li><a href="doc/Calculating_Factors.html#yield-curve">Yield Curve</a></li>
-	<li><a href="doc/Calculating_Factors.html#review-exogs">Review Exogs</a></li>
-	<li><a href="doc/Calculating_Factors.html#carry-return-endogenous-variable">Carry Return (endogenous variable)</a></li>
-	</ul></li>
-</ul>
 	<li><h3><a href="doc/Specifying_the_Model-Overview_and_Simplest_Implementation.html">Model Overview and Simple Implementation</a></h3>State the full model, then start by validating with a single factor, single asset version using known parameters.</li>
 	<ul>
 		<li><a href="doc/Specifying_the_Model-Overview_and_Simplest_Implementation.html#model-overview">Model Overview</a></li>
@@ -137,6 +111,7 @@
 		</ul></li>
 		<li><a href="doc/Backtesting.html#conclusions">Conclusions</a></li>
 	</ul>
+	<li><h3>[In Progress] Optimizing</h3>Compare the in-sample results of a few options for optimized portfolios built on the basis of these forecasts.</li>
 	</ol>
 <h2 id="conclusions">Conclusions</h2>
 <p>In these pages, we built from scratch a time-varying, factor-based model to forecast weekly FX returns. We started with a simple, univariate Gaussian Process regression, then added complications to the model one by one, validating each step as we went. We now have a full backtest of the factor model, and we’ve validated the forecasts against actual values. We’ve also confirmed that the signals from these factors are swamped by the noise of weekly movements.</p>
