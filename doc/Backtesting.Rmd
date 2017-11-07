@@ -409,7 +409,8 @@ map2_dfr(yhat[!not_run],
          names(yhat)[!not_run],
          function(x, dt) {
            x %>% as_tibble() %>%
-             gather(asset,value) %>%
+             mutate(iter=seq_len(n())) %>%
+             gather(asset,value, -iter) %>%
              mutate(Date=ymd(dt))
          })  %>%
   write_csv("../data/forecast_ys.csv")
